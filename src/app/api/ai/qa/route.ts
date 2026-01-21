@@ -44,10 +44,14 @@ Cast count: ${promptRequest.cast?.length || 0} characters
 
 Identify any issues and provide actionable suggestions. Return empty arrays if no issues found.`;
 
-    const result = await callOpenRouter([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ]);
+    const appUrl = request.headers.get("origin") || request.nextUrl.origin;
+    const result = await callOpenRouter(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      { appUrl }
+    );
 
     if (!result.ok) {
       return NextResponse.json(result, { status: 500 });

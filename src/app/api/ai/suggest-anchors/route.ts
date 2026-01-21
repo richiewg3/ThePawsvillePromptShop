@@ -31,10 +31,14 @@ Generate 10 specific environmental anchors for this scene, then pick the 5 best 
 Each anchor should be a short phrase describing a specific, visible object or element.
 Examples: "worn leather armchair", "steaming coffee mug", "rain-streaked window", "flickering neon sign"`;
 
-    const result = await callOpenRouter([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ]);
+    const appUrl = request.headers.get("origin") || request.nextUrl.origin;
+    const result = await callOpenRouter(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      { appUrl }
+    );
 
     if (!result.ok) {
       return NextResponse.json(result, { status: 500 });

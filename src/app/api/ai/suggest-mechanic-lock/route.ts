@@ -38,10 +38,14 @@ Generate 5 mechanic lock sentences for this scene.
 Each should be ONE sentence describing a cause→effect relationship visible in the frozen moment.
 Focus on physical, visual cause-and-effect that the image generator can render.`;
 
-    const result = await callOpenRouter([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ]);
+    const appUrl = request.headers.get("origin") || request.nextUrl.origin;
+    const result = await callOpenRouter(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      { appUrl }
+    );
 
     if (!result.ok) {
       return NextResponse.json(result, { status: 500 });

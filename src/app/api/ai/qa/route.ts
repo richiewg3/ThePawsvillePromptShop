@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callOpenRouter, createJsonSystemPrompt } from "@/lib/openrouter";
+import { callPerplexity, createJsonSystemPrompt } from "@/lib/perplexity";
 import { QASuggestionsSchema } from "@/lib/schemas";
 
 export async function POST(request: NextRequest) {
@@ -44,14 +44,10 @@ Cast count: ${promptRequest.cast?.length || 0} characters
 
 Identify any issues and provide actionable suggestions. Return empty arrays if no issues found.`;
 
-    const appUrl = request.headers.get("origin") || request.nextUrl.origin;
-    const result = await callOpenRouter(
-      [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      { appUrl }
-    );
+    const result = await callPerplexity([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
 
     if (!result.ok) {
       return NextResponse.json(result, { status: 500 });

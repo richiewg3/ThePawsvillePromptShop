@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callOpenRouter, createJsonSystemPrompt } from "@/lib/openrouter";
+import { callPerplexity, createJsonSystemPrompt } from "@/lib/perplexity";
 import { MicroDetailSuggestionsSchema } from "@/lib/schemas";
 
 export async function POST(request: NextRequest) {
@@ -39,14 +39,10 @@ Generate 12 specific micro-detail suggestions for this scene.
 Each should be a descriptive phrase for a small visual element that adds richness.
 Include a mix of: atmospheric effects, wear/age signs, light interactions, and small environmental elements.`;
 
-    const appUrl = request.headers.get("origin") || request.nextUrl.origin;
-    const result = await callOpenRouter(
-      [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      { appUrl }
-    );
+    const result = await callPerplexity([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
 
     if (!result.ok) {
       return NextResponse.json(result, { status: 500 });

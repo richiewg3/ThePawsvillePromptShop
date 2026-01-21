@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callOpenRouter, createJsonSystemPrompt } from "@/lib/openrouter";
+import { callPerplexity, createJsonSystemPrompt } from "@/lib/perplexity";
 import { FocusTargetSuggestionsSchema } from "@/lib/schemas";
 
 export async function POST(request: NextRequest) {
@@ -37,14 +37,10 @@ Generate 3 focus target descriptions for this scene.
 Each should be a short sentence describing what MUST be sharp and what can be secondary.
 Consider depth of field implications based on framing and lens.`;
 
-    const appUrl = request.headers.get("origin") || request.nextUrl.origin;
-    const result = await callOpenRouter(
-      [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      { appUrl }
-    );
+    const result = await callPerplexity([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
 
     if (!result.ok) {
       return NextResponse.json(result, { status: 500 });

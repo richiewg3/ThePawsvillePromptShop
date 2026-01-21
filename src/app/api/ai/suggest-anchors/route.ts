@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callOpenRouter, createJsonSystemPrompt } from "@/lib/openrouter";
+import { callPerplexity, createJsonSystemPrompt } from "@/lib/perplexity";
 import { AnchorSuggestionsSchema } from "@/lib/schemas";
 
 export async function POST(request: NextRequest) {
@@ -31,14 +31,10 @@ Generate 10 specific environmental anchors for this scene, then pick the 5 best 
 Each anchor should be a short phrase describing a specific, visible object or element.
 Examples: "worn leather armchair", "steaming coffee mug", "rain-streaked window", "flickering neon sign"`;
 
-    const appUrl = request.headers.get("origin") || request.nextUrl.origin;
-    const result = await callOpenRouter(
-      [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      { appUrl }
-    );
+    const result = await callPerplexity([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
 
     if (!result.ok) {
       return NextResponse.json(result, { status: 500 });

@@ -23,11 +23,7 @@ import {
   getLenses,
   getMicroTextures,
   getMicroDetails,
-  getCurrentDraft,
-  saveCurrentDraft,
   downloadJson,
-  exportPromptRequest,
-  importData,
 } from "@/lib/storage";
 import { compilePrompt, CompilerContext } from "@/lib/compiler";
 import { CastWardrobeBinder } from "@/components/cast-wardrobe-binder";
@@ -37,6 +33,10 @@ import { ValidationPanel } from "@/components/validation-panel";
 import { PromptPreview } from "@/components/prompt-preview";
 import { LookInfoPopover } from "@/components/look-info-popover";
 import { AISuggestionModal, AnchorSuggestionModal } from "@/components/ai-suggestion-modal";
+import { ProjectsList } from "@/components/projects-list";
+import { PromptsList } from "@/components/prompts-list";
+import { PromptHistory } from "@/components/prompt-history";
+import { useProject } from "@/hooks/useProject";
 import {
   suggestAnchors,
   suggestMechanicLock,
@@ -63,6 +63,34 @@ const FRAMING_OPTIONS: { value: Framing; label: string; desc: string }[] = [
 ];
 
 export default function PromptComposerPage() {
+  // Project management hook
+  const {
+    projects,
+    projectsLoading,
+    refreshProjects,
+    currentProject,
+    projectLoading,
+    openProject,
+    closeProject,
+    createProject,
+    deleteProject,
+    renameProject,
+    currentPrompt,
+    openPrompt,
+    closePrompt,
+    createPrompt,
+    deletePrompt,
+    renamePrompt,
+    duplicatePrompt,
+    updatePromptRequest,
+    saveHistoryEntry,
+    restoreFromHistory,
+    storageMode,
+    isSaving,
+    lastSaved,
+    saveNow,
+  } = useProject();
+
   // Library data
   const [characters, setCharacters] = useState<CharacterProfile[]>([]);
   const [wardrobes, setWardrobes] = useState<WardrobeProfile[]>([]);
@@ -70,21 +98,6 @@ export default function PromptComposerPage() {
   const [lenses, setLenses] = useState<LensProfile[]>([]);
   const [microTextures, setMicroTextures] = useState<MicroTexturePack[]>([]);
   const [microDetails, setMicroDetails] = useState<MicroDetailPack[]>([]);
-
-  // Form state
-  const [aspectRatio, setAspectRatio] = useState<AspectRatio>("3x2");
-  const [outputMode, setOutputMode] = useState<OutputMode>("compact");
-  const [sceneHeart, setSceneHeart] = useState("");
-  const [cast, setCast] = useState<CastMember[]>([]);
-  const [framing, setFraming] = useState<Framing>("medium");
-  const [lensMode, setLensMode] = useState<LensMode>("auto");
-  const [lensProfileId, setLensProfileId] = useState<string>("");
-  const [lookFamilyId, setLookFamilyId] = useState<string>("");
-  const [environmentAnchors, setEnvironmentAnchors] = useState<string[]>(["", "", "", "", ""]);
-  const [mechanicLock, setMechanicLock] = useState("");
-  const [focusTarget, setFocusTarget] = useState("");
-  const [selectedMicroTextures, setSelectedMicroTextures] = useState<string[]>([]);
-  const [selectedMicroDetails, setSelectedMicroDetails] = useState<string[]>([]);
 
   // AI suggestion state
   const [anchorModalOpen, setAnchorModalOpen] = useState(false);
@@ -105,6 +118,39 @@ export default function PromptComposerPage() {
   const [qaLoading, setQaLoading] = useState(false);
   const [qaResults, setQaResults] = useState<{ warnings: string[]; suggestedFixes: string[] } | null>(null);
 
+  // Get current prompt request data (from project or defaults)
+  const promptRequest = currentPrompt?.promptRequest || {};
+  
+  // Form field getters with defaults
+  const aspectRatio = (promptRequest.aspectRatio as AspectRatio) || "3x2";
+  const outputMode = (promptRequest.outputMode as OutputMode) || "compact";
+  const sceneHeart = promptRequest.sceneHeart || "";
+  const cast = (promptRequest.cast as CastMember[]) || [];
+  const framing = (promptRequest.framing as Framing) || "medium";
+  const lensMode = (promptRequest.lensMode as LensMode) || "auto";
+  const lensProfileId = promptRequest.lensProfileId || "";
+  const lookFamilyId = promptRequest.lookFamilyId || "";
+  const environmentAnchors = promptRequest.environmentAnchors || ["", "", "", "", ""];
+  const mechanicLock = promptRequest.mechanicLock || "";
+  const focusTarget = promptRequest.focusTarget || "";
+  const selectedMicroTextures = promptRequest.selectedMicroTextures || [];
+  const selectedMicroDetails = promptRequest.selectedMicroDetails || [];
+
+  // Form field setters - all update via hook
+  const setAspectRatio = (value: AspectRatio) => updatePromptRequest({ aspectRatio: value });
+  const setOutputMode = (value: OutputMode) => updatePromptRequest({ outputMode: value });
+  const setSceneHeart = (value: string) => updatePromptRequest({ sceneHeart: value });
+  const setCast = (value: CastMember[]) => updatePromptRequest({ cast: value });
+  const setFraming = (value: Framing) => updatePromptRequest({ framing: value });
+  const setLensMode = (value: LensMode) => updatePromptRequest({ lensMode: value });
+  const setLensProfileId = (value: string) => updatePromptRequest({ lensProfileId: value });
+  const setLookFamilyId = (value: string) => updatePromptRequest({ lookFamilyId: value });
+  const setEnvironmentAnchors = (value: string[]) => updatePromptRequest({ environmentAnchors: value });
+  const setMechanicLock = (value: string) => updatePromptRequest({ mechanicLock: value });
+  const setFocusTarget = (value: string) => updatePromptRequest({ focusTarget: value });
+  const setSelectedMicroTextures = (value: string[]) => updatePromptRequest({ selectedMicroTextures: value });
+  const setSelectedMicroDetails = (value: string[]) => updatePromptRequest({ selectedMicroDetails: value });
+
   // Load library data
   useEffect(() => {
     setCharacters(getCharacters());
@@ -113,64 +159,12 @@ export default function PromptComposerPage() {
     setLenses(getLenses());
     setMicroTextures(getMicroTextures());
     setMicroDetails(getMicroDetails());
-
-    // Load draft if exists
-    const draft = getCurrentDraft();
-    if (draft) {
-      if (draft.aspectRatio) setAspectRatio(draft.aspectRatio);
-      if (draft.outputMode) setOutputMode(draft.outputMode);
-      if (draft.sceneHeart) setSceneHeart(draft.sceneHeart);
-      if (draft.cast) setCast(draft.cast);
-      if (draft.framing) setFraming(draft.framing);
-      if (draft.lensMode) setLensMode(draft.lensMode);
-      if (draft.lensProfileId) setLensProfileId(draft.lensProfileId);
-      if (draft.lookFamilyId) setLookFamilyId(draft.lookFamilyId);
-      if (draft.environmentAnchors) setEnvironmentAnchors(draft.environmentAnchors);
-      if (draft.mechanicLock) setMechanicLock(draft.mechanicLock);
-      if (draft.focusTarget) setFocusTarget(draft.focusTarget);
-      if (draft.selectedMicroTextures) setSelectedMicroTextures(draft.selectedMicroTextures);
-      if (draft.selectedMicroDetails) setSelectedMicroDetails(draft.selectedMicroDetails);
-    }
   }, []);
 
-  // Auto-save draft
-  useEffect(() => {
-    const draft: Partial<PromptRequest> = {
-      aspectRatio,
-      outputMode,
-      sceneHeart,
-      cast,
-      framing,
-      lensMode,
-      lensProfileId: lensProfileId || undefined,
-      lookFamilyId: lookFamilyId || undefined,
-      environmentAnchors,
-      mechanicLock,
-      focusTarget,
-      selectedMicroTextures,
-      selectedMicroDetails,
-    };
-    saveCurrentDraft(draft);
-  }, [
-    aspectRatio,
-    outputMode,
-    sceneHeart,
-    cast,
-    framing,
-    lensMode,
-    lensProfileId,
-    lookFamilyId,
-    environmentAnchors,
-    mechanicLock,
-    focusTarget,
-    selectedMicroTextures,
-    selectedMicroDetails,
-  ]);
-
   // Build full request for validation/compilation
-  const promptRequest: Partial<PromptRequest> = useMemo(
+  const fullPromptRequest: Partial<PromptRequest> = useMemo(
     () => ({
-      id: crypto.randomUUID(),
+      id: currentPrompt?.id || crypto.randomUUID(),
       aspectRatio,
       outputMode,
       sceneHeart,
@@ -184,10 +178,11 @@ export default function PromptComposerPage() {
       focusTarget,
       selectedMicroTextures,
       selectedMicroDetails,
-      createdAt: new Date().toISOString(),
+      createdAt: currentPrompt?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }),
     [
+      currentPrompt,
       aspectRatio,
       outputMode,
       sceneHeart,
@@ -206,8 +201,8 @@ export default function PromptComposerPage() {
 
   // Validation
   const validationErrors = useMemo(
-    () => validatePromptRequest(promptRequest, characters, wardrobes, looks, lenses),
-    [promptRequest, characters, wardrobes, looks, lenses]
+    () => validatePromptRequest(fullPromptRequest, characters, wardrobes, looks, lenses),
+    [fullPromptRequest, characters, wardrobes, looks, lenses]
   );
 
   const hardErrors = validationErrors.filter((e) => e.type === "hard");
@@ -224,62 +219,39 @@ export default function PromptComposerPage() {
       microTextures,
       microDetails,
     };
-    return compilePrompt(promptRequest as PromptRequest, context);
-  }, [canCompile, promptRequest, characters, wardrobes, looks, lenses, microTextures, microDetails]);
+    return compilePrompt(fullPromptRequest as PromptRequest, context);
+  }, [canCompile, fullPromptRequest, characters, wardrobes, looks, lenses, microTextures, microDetails]);
 
   // Selected look for info display
   const selectedLook = looks.find((l) => l.id === lookFamilyId) || null;
 
-  // Export/Import handlers
+  // Export handler
   const handleExport = () => {
-    const data = exportPromptRequest();
-    downloadJson(data, `pawsville-prompt-${Date.now()}.json`);
+    if (!currentProject) return;
+    downloadJson(currentProject, `pawsville-project-${currentProject.id}.json`);
   };
 
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = JSON.parse(event.target?.result as string);
-        const result = importData(data);
-        if (result.errors.length > 0) {
-          alert(`Import completed with errors:\n${result.errors.join("\n")}`);
-        } else {
-          alert(`Imported: ${result.imported.join(", ")}`);
-          // Reload data
-          setCharacters(getCharacters());
-          setWardrobes(getWardrobes());
-          setLooks(getLooks());
-          setLenses(getLenses());
-          setMicroTextures(getMicroTextures());
-          setMicroDetails(getMicroDetails());
-        }
-      } catch {
-        alert("Failed to parse JSON file");
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = "";
-  };
-
-  const handleClearDraft = () => {
-    if (confirm("Clear all fields and start fresh?")) {
-      setAspectRatio("3x2");
-      setOutputMode("compact");
-      setSceneHeart("");
-      setCast([]);
-      setFraming("medium");
-      setLensMode("auto");
-      setLensProfileId("");
-      setLookFamilyId("");
-      setEnvironmentAnchors(["", "", "", "", ""]);
-      setMechanicLock("");
-      setFocusTarget("");
-      setSelectedMicroTextures([]);
-      setSelectedMicroDetails([]);
+  const handleClearPrompt = () => {
+    if (!currentPrompt) return;
+    if (confirm("Clear all fields for this prompt?")) {
+      // Save history first
+      saveHistoryEntry("Before clearing");
+      // Reset all fields
+      updatePromptRequest({
+        aspectRatio: "3x2",
+        outputMode: "compact",
+        sceneHeart: "",
+        cast: [],
+        framing: "medium",
+        lensMode: "auto",
+        lensProfileId: "",
+        lookFamilyId: "",
+        environmentAnchors: ["", "", "", "", ""],
+        mechanicLock: "",
+        focusTarget: "",
+        selectedMicroTextures: [],
+        selectedMicroDetails: [],
+      });
     }
   };
 
@@ -362,7 +334,7 @@ export default function PromptComposerPage() {
     setQaLoading(true);
     setQaResults(null);
     
-    const result = await runQACheck(promptRequest);
+    const result = await runQACheck(fullPromptRequest);
     setQaLoading(false);
     
     if (result.ok && result.data) {
@@ -370,300 +342,372 @@ export default function PromptComposerPage() {
     }
   };
 
+  // ============================================
+  // RENDER: Projects List (no project open)
+  // ============================================
+  if (!currentProject) {
+    return (
+      <ProjectsList
+        projects={projects}
+        loading={projectsLoading}
+        storageMode={storageMode}
+        onOpenProject={openProject}
+        onCreateProject={async (name) => {
+          await createProject(name);
+        }}
+        onDeleteProject={deleteProject}
+        onRefresh={refreshProjects}
+      />
+    );
+  }
+
+  // ============================================
+  // RENDER: Project View (with prompts sidebar)
+  // ============================================
   return (
-    <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="font-display text-3xl font-bold text-canvas-800 flex items-center gap-3">
-            <span className="text-4xl">✨</span>
-            Prompt Composer
-          </h1>
-          <p className="text-canvas-600 mt-1">
-            Craft structured prompts for Sora image generation
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="btn btn-secondary cursor-pointer">
-            <input type="file" accept=".json" onChange={handleImport} className="hidden" />
-            Import JSON
-          </label>
-          <button onClick={handleExport} className="btn btn-secondary">
-            Export JSON
-          </button>
-          <button onClick={handleClearDraft} className="btn btn-ghost text-red-500">
-            Clear
-          </button>
-        </div>
+    <div className="animate-fade-in flex h-[calc(100vh-120px)] gap-6">
+      {/* Prompts Sidebar */}
+      <div className="w-72 shrink-0 bg-white rounded-2xl shadow-soft border border-canvas-200 overflow-hidden flex flex-col">
+        <PromptsList
+          project={currentProject}
+          currentPromptId={currentPrompt?.id || null}
+          onOpenPrompt={openPrompt}
+          onCreatePrompt={createPrompt}
+          onDeletePrompt={deletePrompt}
+          onRenamePrompt={renamePrompt}
+          onDuplicatePrompt={duplicatePrompt}
+          onCloseProject={closeProject}
+          onRenameProject={renameProject}
+          storageMode={storageMode}
+          isSaving={isSaving}
+          lastSaved={lastSaved}
+          onSaveNow={saveNow}
+        />
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[1fr,400px]">
-        {/* Main form */}
-        <div className="space-y-6">
-          {/* Row 1: Aspect ratio, Output mode, Framing */}
-          <div className="card p-5">
-            <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
-              Output Settings
-            </h2>
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div>
-                <label className="label">Aspect Ratio</label>
-                <select
-                  className="select"
-                  value={aspectRatio}
-                  onChange={(e) => setAspectRatio(e.target.value as AspectRatio)}
-                >
-                  {ASPECT_RATIO_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="label">Output Mode</label>
-                <select
-                  className="select"
-                  value={outputMode}
-                  onChange={(e) => setOutputMode(e.target.value as OutputMode)}
-                >
-                  {OUTPUT_MODE_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="label">Framing (Coverage)</label>
-                <select
-                  className="select"
-                  value={framing}
-                  onChange={(e) => setFraming(e.target.value as Framing)}
-                >
-                  {FRAMING_OPTIONS.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label} — {opt.desc}
-                    </option>
-                  ))}
-                </select>
-              </div>
+      {/* Main Content */}
+      <div className="flex-1 overflow-y-auto">
+        {!currentPrompt ? (
+          // No prompt selected
+          <div className="h-full flex items-center justify-center">
+            <div className="text-center">
+              <div className="text-6xl mb-4">&#128221;</div>
+              <h2 className="text-xl font-semibold text-canvas-800 mb-2">
+                Select or Create a Prompt
+              </h2>
+              <p className="text-canvas-600 mb-4">
+                Choose a prompt from the sidebar or create a new one to get started.
+              </p>
+              <button
+                onClick={() => createPrompt("New Prompt")}
+                className="btn btn-primary"
+              >
+                + Create New Prompt
+              </button>
             </div>
           </div>
-
-          {/* Scene Heart */}
-          <div className="card p-5">
-            <label className="label">
-              Scene Heart <span className="label-hint">(who/what/where — ONE frozen moment)</span>
-            </label>
-            <textarea
-              className={`textarea min-h-[100px] ${!sceneHeart.trim() ? "border-red-300" : ""}`}
-              placeholder="Describe the single frozen instant: who is doing what, where. Be specific about the action and emotion."
-              value={sceneHeart}
-              onChange={(e) => setSceneHeart(e.target.value)}
-            />
-          </div>
-
-          {/* Cast + Wardrobe */}
-          <div className="card p-5">
-            <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
-              Cast & Wardrobe
-            </h2>
-            <CastWardrobeBinder
-              characters={characters}
-              wardrobes={wardrobes}
-              cast={cast}
-              onChange={setCast}
-            />
-          </div>
-
-          {/* Look & Lens */}
-          <div className="card p-5">
-            <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
-              Look & Lens
-            </h2>
-            <div className="grid gap-4 lg:grid-cols-2">
+        ) : (
+          // Prompt Editor
+          <>
+            <div className="flex items-center justify-between mb-6">
               <div>
-                <label className="label">Look Family</label>
-                <select
-                  className={`select ${!lookFamilyId ? "border-red-300" : ""}`}
-                  value={lookFamilyId}
-                  onChange={(e) => setLookFamilyId(e.target.value)}
-                >
-                  <option value="">Select a look...</option>
-                  {looks.map((look) => (
-                    <option key={look.id} value={look.id}>
-                      {look.uiName} — {look.whenToUse}
-                    </option>
-                  ))}
-                </select>
-                <div className="mt-3">
-                  <LookInfoPopover look={selectedLook} />
-                </div>
+                <h1 className="font-display text-2xl font-bold text-canvas-800">
+                  {currentPrompt.title}
+                </h1>
+                <p className="text-canvas-600 mt-1 text-sm">
+                  Editing prompt in project: {currentProject.name}
+                </p>
               </div>
-              <div>
-                <label className="label">Lens Mode</label>
-                <div className="flex gap-2 mb-3">
-                  <button
-                    type="button"
-                    onClick={() => setLensMode("auto")}
-                    className={`btn flex-1 ${lensMode === "auto" ? "btn-primary" : "btn-secondary"}`}
-                  >
-                    Auto (Look Default)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setLensMode("manual")}
-                    className={`btn flex-1 ${lensMode === "manual" ? "btn-primary" : "btn-secondary"}`}
-                  >
-                    Manual
-                  </button>
-                </div>
-                {lensMode === "manual" && (
-                  <div>
-                    <label className="label text-sm">Select Lens</label>
-                    <select
-                      className={`select ${!lensProfileId ? "border-red-300" : ""}`}
-                      value={lensProfileId}
-                      onChange={(e) => setLensProfileId(e.target.value)}
-                    >
-                      <option value="">Select a lens...</option>
-                      {lenses.map((lens) => (
-                        <option key={lens.id} value={lens.id}>
-                          {lens.uiName} ({lens.focalLengthMm}mm)
-                        </option>
-                      ))}
-                    </select>
+              <div className="flex items-center gap-2">
+                <button onClick={handleExport} className="btn btn-secondary">
+                  Export Project
+                </button>
+                <button onClick={handleClearPrompt} className="btn btn-ghost text-red-500">
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-[1fr,400px]">
+              {/* Main form */}
+              <div className="space-y-6">
+                {/* Row 1: Aspect ratio, Output mode, Framing */}
+                <div className="card p-5">
+                  <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
+                    Output Settings
+                  </h2>
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <div>
+                      <label className="label">Aspect Ratio</label>
+                      <select
+                        className="select"
+                        value={aspectRatio}
+                        onChange={(e) => setAspectRatio(e.target.value as AspectRatio)}
+                      >
+                        {ASPECT_RATIO_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Output Mode</label>
+                      <select
+                        className="select"
+                        value={outputMode}
+                        onChange={(e) => setOutputMode(e.target.value as OutputMode)}
+                      >
+                        {OUTPUT_MODE_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Framing (Coverage)</label>
+                      <select
+                        className="select"
+                        value={framing}
+                        onChange={(e) => setFraming(e.target.value as Framing)}
+                      >
+                        {FRAMING_OPTIONS.map((opt) => (
+                          <option key={opt.value} value={opt.value}>
+                            {opt.label} — {opt.desc}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                   </div>
-                )}
-                {lensMode === "auto" && selectedLook && (
-                  <p className="text-sm text-canvas-600 bg-canvas-50 p-3 rounded-lg">
-                    Auto-selecting <strong>{selectedLook.recommendedLensByFraming[framing]}mm</strong> based on{" "}
-                    <em>{selectedLook.uiName}</em> + <em>{framing.replace("_", " ")}</em> framing
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Environment Anchors */}
-          <div className="card p-5">
-            <AnchorFields
-              anchors={environmentAnchors}
-              onChange={setEnvironmentAnchors}
-              onSuggest={handleSuggestAnchors}
-              isLoadingSuggestions={anchorLoading}
-            />
-          </div>
-
-          {/* Mechanic Lock & Focus Target */}
-          <div className="card p-5">
-            <div className="grid gap-4 lg:grid-cols-2">
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="label mb-0">
-                    Mechanic Lock <span className="label-hint">(cause → effect)</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleSuggestMechanic}
-                    disabled={mechanicLoading}
-                    className="text-sm text-paw-600 hover:text-paw-700 disabled:opacity-50"
-                  >
-                    {mechanicLoading ? "⏳" : "✨"} AI Suggest
-                  </button>
                 </div>
-                <textarea
-                  className={`textarea ${!mechanicLock.trim() ? "border-red-300" : ""}`}
-                  placeholder="One sentence: what causes what effect in this moment?"
-                  value={mechanicLock}
-                  onChange={(e) => setMechanicLock(e.target.value)}
-                  rows={2}
+
+                {/* Scene Heart */}
+                <div className="card p-5">
+                  <label className="label">
+                    Scene Heart <span className="label-hint">(who/what/where — ONE frozen moment)</span>
+                  </label>
+                  <textarea
+                    className={`textarea min-h-[100px] ${!sceneHeart.trim() ? "border-red-300" : ""}`}
+                    placeholder="Describe the single frozen instant: who is doing what, where. Be specific about the action and emotion."
+                    value={sceneHeart}
+                    onChange={(e) => setSceneHeart(e.target.value)}
+                  />
+                </div>
+
+                {/* Cast + Wardrobe */}
+                <div className="card p-5">
+                  <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
+                    Cast & Wardrobe
+                  </h2>
+                  <CastWardrobeBinder
+                    characters={characters}
+                    wardrobes={wardrobes}
+                    cast={cast}
+                    onChange={setCast}
+                  />
+                </div>
+
+                {/* Look & Lens */}
+                <div className="card p-5">
+                  <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
+                    Look & Lens
+                  </h2>
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div>
+                      <label className="label">Look Family</label>
+                      <select
+                        className={`select ${!lookFamilyId ? "border-red-300" : ""}`}
+                        value={lookFamilyId}
+                        onChange={(e) => setLookFamilyId(e.target.value)}
+                      >
+                        <option value="">Select a look...</option>
+                        {looks.map((look) => (
+                          <option key={look.id} value={look.id}>
+                            {look.uiName} — {look.whenToUse}
+                          </option>
+                        ))}
+                      </select>
+                      <div className="mt-3">
+                        <LookInfoPopover look={selectedLook} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="label">Lens Mode</label>
+                      <div className="flex gap-2 mb-3">
+                        <button
+                          type="button"
+                          onClick={() => setLensMode("auto")}
+                          className={`btn flex-1 ${lensMode === "auto" ? "btn-primary" : "btn-secondary"}`}
+                        >
+                          Auto (Look Default)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setLensMode("manual")}
+                          className={`btn flex-1 ${lensMode === "manual" ? "btn-primary" : "btn-secondary"}`}
+                        >
+                          Manual
+                        </button>
+                      </div>
+                      {lensMode === "manual" && (
+                        <div>
+                          <label className="label text-sm">Select Lens</label>
+                          <select
+                            className={`select ${!lensProfileId ? "border-red-300" : ""}`}
+                            value={lensProfileId}
+                            onChange={(e) => setLensProfileId(e.target.value)}
+                          >
+                            <option value="">Select a lens...</option>
+                            {lenses.map((lens) => (
+                              <option key={lens.id} value={lens.id}>
+                                {lens.uiName} ({lens.focalLengthMm}mm)
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      {lensMode === "auto" && selectedLook && (
+                        <p className="text-sm text-canvas-600 bg-canvas-50 p-3 rounded-lg">
+                          Auto-selecting <strong>{selectedLook.recommendedLensByFraming[framing]}mm</strong> based on{" "}
+                          <em>{selectedLook.uiName}</em> + <em>{framing.replace("_", " ")}</em> framing
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Environment Anchors */}
+                <div className="card p-5">
+                  <AnchorFields
+                    anchors={environmentAnchors}
+                    onChange={setEnvironmentAnchors}
+                    onSuggest={handleSuggestAnchors}
+                    isLoadingSuggestions={anchorLoading}
+                  />
+                </div>
+
+                {/* Mechanic Lock & Focus Target */}
+                <div className="card p-5">
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="label mb-0">
+                          Mechanic Lock <span className="label-hint">(cause to effect)</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleSuggestMechanic}
+                          disabled={mechanicLoading}
+                          className="text-sm text-paw-600 hover:text-paw-700 disabled:opacity-50"
+                        >
+                          {mechanicLoading ? "..." : "AI Suggest"}
+                        </button>
+                      </div>
+                      <textarea
+                        className={`textarea ${!mechanicLock.trim() ? "border-red-300" : ""}`}
+                        placeholder="One sentence: what causes what effect in this moment?"
+                        value={mechanicLock}
+                        onChange={(e) => setMechanicLock(e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="label mb-0">
+                          Focus Target <span className="label-hint">(what MUST be sharp)</span>
+                        </label>
+                        <button
+                          type="button"
+                          onClick={handleSuggestFocus}
+                          disabled={focusLoading}
+                          className="text-sm text-paw-600 hover:text-paw-700 disabled:opacity-50"
+                        >
+                          {focusLoading ? "..." : "AI Suggest"}
+                        </button>
+                      </div>
+                      <textarea
+                        className={`textarea ${!focusTarget.trim() ? "border-red-300" : ""}`}
+                        placeholder="e.g., Focus on the dragon's face and torso; background secondary"
+                        value={focusTarget}
+                        onChange={(e) => setFocusTarget(e.target.value)}
+                        rows={2}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Micro Packs */}
+                <div className="card p-5">
+                  <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
+                    Micro Packs
+                  </h2>
+                  <MicroPackSelectors
+                    texturePacks={microTextures}
+                    detailPacks={microDetails}
+                    selectedTextures={selectedMicroTextures}
+                    selectedDetails={selectedMicroDetails}
+                    onTexturesChange={setSelectedMicroTextures}
+                    onDetailsChange={setSelectedMicroDetails}
+                  />
+                </div>
+
+                {/* History */}
+                <div className="card p-5">
+                  <PromptHistory
+                    history={currentPrompt.history}
+                    onRestore={restoreFromHistory}
+                    onSaveSnapshot={saveHistoryEntry}
+                  />
+                </div>
+
+                {/* Validation */}
+                <div className="card p-5">
+                  <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
+                    Validation
+                  </h2>
+                  <ValidationPanel 
+                    errors={validationErrors} 
+                    onRunQA={handleRunQA}
+                    isLoadingQA={qaLoading}
+                  />
+                  {qaResults && (qaResults.warnings.length > 0 || qaResults.suggestedFixes.length > 0) && (
+                    <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                      <h4 className="font-semibold text-blue-800 mb-2">AI QA Results</h4>
+                      {qaResults.warnings.length > 0 && (
+                        <div className="mb-2">
+                          <span className="text-sm font-medium text-blue-700">Warnings:</span>
+                          <ul className="list-disc list-inside text-sm text-blue-600 mt-1">
+                            {qaResults.warnings.map((w, i) => <li key={i}>{w}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                      {qaResults.suggestedFixes.length > 0 && (
+                        <div>
+                          <span className="text-sm font-medium text-blue-700">Suggestions:</span>
+                          <ul className="list-disc list-inside text-sm text-blue-600 mt-1">
+                            {qaResults.suggestedFixes.map((f, i) => <li key={i}>{f}</li>)}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Preview sidebar */}
+              <div className="lg:relative">
+                <PromptPreview
+                  compiledText={compiledResult?.text || ""}
+                  seedSummary={compiledResult?.seedSummary || ""}
+                  lensSource={compiledResult?.resolvedLens.source || "auto"}
+                  lensWarning={compiledResult?.resolvedLens.warning}
+                  canCompile={canCompile}
                 />
               </div>
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="label mb-0">
-                    Focus Target <span className="label-hint">(what MUST be sharp)</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleSuggestFocus}
-                    disabled={focusLoading}
-                    className="text-sm text-paw-600 hover:text-paw-700 disabled:opacity-50"
-                  >
-                    {focusLoading ? "⏳" : "✨"} AI Suggest
-                  </button>
-                </div>
-                <textarea
-                  className={`textarea ${!focusTarget.trim() ? "border-red-300" : ""}`}
-                  placeholder="e.g., Focus on the dragon's face and torso; background secondary"
-                  value={focusTarget}
-                  onChange={(e) => setFocusTarget(e.target.value)}
-                  rows={2}
-                />
-              </div>
             </div>
-          </div>
-
-          {/* Micro Packs */}
-          <div className="card p-5">
-            <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
-              Micro Packs
-            </h2>
-            <MicroPackSelectors
-              texturePacks={microTextures}
-              detailPacks={microDetails}
-              selectedTextures={selectedMicroTextures}
-              selectedDetails={selectedMicroDetails}
-              onTexturesChange={setSelectedMicroTextures}
-              onDetailsChange={setSelectedMicroDetails}
-            />
-          </div>
-
-          {/* Validation */}
-          <div className="card p-5">
-            <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
-              Validation
-            </h2>
-            <ValidationPanel 
-              errors={validationErrors} 
-              onRunQA={handleRunQA}
-              isLoadingQA={qaLoading}
-            />
-            {qaResults && (qaResults.warnings.length > 0 || qaResults.suggestedFixes.length > 0) && (
-              <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                <h4 className="font-semibold text-blue-800 mb-2">AI QA Results</h4>
-                {qaResults.warnings.length > 0 && (
-                  <div className="mb-2">
-                    <span className="text-sm font-medium text-blue-700">Warnings:</span>
-                    <ul className="list-disc list-inside text-sm text-blue-600 mt-1">
-                      {qaResults.warnings.map((w, i) => <li key={i}>{w}</li>)}
-                    </ul>
-                  </div>
-                )}
-                {qaResults.suggestedFixes.length > 0 && (
-                  <div>
-                    <span className="text-sm font-medium text-blue-700">Suggestions:</span>
-                    <ul className="list-disc list-inside text-sm text-blue-600 mt-1">
-                      {qaResults.suggestedFixes.map((f, i) => <li key={i}>{f}</li>)}
-                    </ul>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Preview sidebar */}
-        <div className="lg:relative">
-          <PromptPreview
-            compiledText={compiledResult?.text || ""}
-            seedSummary={compiledResult?.seedSummary || ""}
-            lensSource={compiledResult?.resolvedLens.source || "auto"}
-            lensWarning={compiledResult?.resolvedLens.warning}
-            canCompile={canCompile}
-          />
-        </div>
+          </>
+        )}
       </div>
 
       {/* AI Suggestion Modals */}

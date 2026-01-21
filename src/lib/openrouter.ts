@@ -12,6 +12,10 @@ const FALLBACK_MODELS = [
   "meta-llama/llama-3.3-8b-instruct:free",
 ];
 
+const RETRYABLE_HTTP_STATUSES = new Set([404, 408, 409, 429, 500, 502, 503, 504]);
+const RETRYABLE_ERROR_CODES = new Set(["NETWORK_ERROR", "EMPTY_RESPONSE", "INVALID_JSON"]);
+const RESPONSE_FORMAT_ERROR_REGEX = /response[_\s-]?format|json[_\s-]?schema|json object/i;
+
 export interface OpenRouterMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -26,31 +30,70 @@ export interface OpenRouterResponse {
   };
 }
 
-/**
- * Calls OpenRouter API with JSON-only response requirement
- * This function should only be called from server-side code (API routes)
- */
-export async function callOpenRouter(
+function getDefaultAppUrl(): string {
+  if (process.env.NEXT_PUBLIC_APP_URL) {
+    return process.env.NEXT_PUBLIC_APP_URL;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  if (process.env.NEXT_PUBLIC_VERCEL_URL) {
+    return `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`;
+  }
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+    return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
+  }
+  return "http://localhost:3000";
+}
+
+function normalizeModels(model?: string): string[] {
+  const models = [model || DEFAULT_MODEL, ...FALLBACK_MODELS];
+  return models.filter((value, index) => models.indexOf(value) === index);
+}
+
+function isResponseFormatError(error?: OpenRouterResponse["error"]): boolean {
+  if (!error?.message) return false;
+  return RESPONSE_FORMAT_ERROR_REGEX.test(error.message);
+}
+
+function shouldTryNextModel(error?: OpenRouterResponse["error"]): boolean {
+  if (!error?.code) return false;
+  if (error.code === "MISSING_API_KEY") return false;
+  if (RETRYABLE_ERROR_CODES.has(error.code)) return true;
+  if (error.code.startsWith("HTTP_")) {
+    const status = Number(error.code.replace("HTTP_", ""));
+    if (!Number.isFinite(status)) {
+      return false;
+    }
+    if (status === 400) {
+      return /model|provider|not supported|unavailable/i.test(error.message || "");
+    }
+    return RETRYABLE_HTTP_STATUSES.has(status);
+  }
+  return false;
+}
+
+async function callOpenRouterOnce(
+  apiKey: string,
+  appUrl: string,
   messages: OpenRouterMessage[],
-  options?: {
-    model?: string;
+  options: {
+    model: string;
     temperature?: number;
     maxTokens?: number;
+    includeResponseFormat: boolean;
   }
 ): Promise<OpenRouterResponse> {
-  const apiKey = process.env.OPENROUTER_API_KEY;
+  const body: Record<string, unknown> = {
+    model: options.model,
+    messages,
+    temperature: options.temperature ?? 0.7,
+    max_tokens: options.maxTokens ?? 1024,
+  };
 
-  if (!apiKey) {
-    return {
-      ok: false,
-      error: {
-        message: "OpenRouter API key not configured",
-        code: "MISSING_API_KEY",
-      },
-    };
+  if (options.includeResponseFormat) {
+    body.response_format = { type: "json_object" };
   }
-
-  const model = options?.model || DEFAULT_MODEL;
 
   try {
     const response = await fetch(OPENROUTER_API_URL, {
@@ -58,16 +101,10 @@ export async function callOpenRouter(
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`,
-        "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000",
+        "HTTP-Referer": appUrl,
         "X-Title": "The Pawsville Prompt Shop",
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature: options?.temperature ?? 0.7,
-        max_tokens: options?.maxTokens ?? 1024,
-        response_format: { type: "json_object" },
-      }),
+      body: JSON.stringify(body),
     });
 
     if (!response.ok) {
@@ -90,6 +127,23 @@ export async function callOpenRouter(
         error: {
           message: "No content in response",
           code: "EMPTY_RESPONSE",
+        },
+      };
+    }
+
+    if (typeof content === "object") {
+      return {
+        ok: true,
+        data: content,
+      };
+    }
+
+    if (typeof content !== "string") {
+      return {
+        ok: false,
+        error: {
+          message: "Unexpected response format from AI",
+          code: "INVALID_JSON",
         },
       };
     }
@@ -133,6 +187,80 @@ export async function callOpenRouter(
       },
     };
   }
+}
+
+/**
+ * Calls OpenRouter API with JSON-only response requirement
+ * This function should only be called from server-side code (API routes)
+ */
+export async function callOpenRouter(
+  messages: OpenRouterMessage[],
+  options?: {
+    model?: string;
+    temperature?: number;
+    maxTokens?: number;
+    appUrl?: string;
+  }
+): Promise<OpenRouterResponse> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+
+  if (!apiKey) {
+    return {
+      ok: false,
+      error: {
+        message: "OpenRouter API key not configured",
+        code: "MISSING_API_KEY",
+      },
+    };
+  }
+
+  const appUrl = options?.appUrl || getDefaultAppUrl();
+  const models = normalizeModels(options?.model);
+  let lastError: OpenRouterResponse | null = null;
+
+  for (const model of models) {
+    const result = await callOpenRouterOnce(apiKey, appUrl, messages, {
+      model,
+      temperature: options?.temperature,
+      maxTokens: options?.maxTokens,
+      includeResponseFormat: true,
+    });
+
+    if (result.ok) {
+      return result;
+    }
+
+    if (isResponseFormatError(result.error)) {
+      const retryWithoutFormat = await callOpenRouterOnce(apiKey, appUrl, messages, {
+        model,
+        temperature: options?.temperature,
+        maxTokens: options?.maxTokens,
+        includeResponseFormat: false,
+      });
+
+      if (retryWithoutFormat.ok) {
+        return retryWithoutFormat;
+      }
+
+      lastError = retryWithoutFormat;
+    } else {
+      lastError = result;
+    }
+
+    if (!shouldTryNextModel(lastError.error)) {
+      return lastError;
+    }
+  }
+
+  return (
+    lastError || {
+      ok: false,
+      error: {
+        message: "OpenRouter request failed",
+        code: "UNKNOWN_ERROR",
+      },
+    }
+  );
 }
 
 /**

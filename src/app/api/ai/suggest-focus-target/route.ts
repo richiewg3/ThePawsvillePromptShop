@@ -37,10 +37,14 @@ Generate 3 focus target descriptions for this scene.
 Each should be a short sentence describing what MUST be sharp and what can be secondary.
 Consider depth of field implications based on framing and lens.`;
 
-    const result = await callOpenRouter([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ]);
+    const appUrl = request.headers.get("origin") || request.nextUrl.origin;
+    const result = await callOpenRouter(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      { appUrl }
+    );
 
     if (!result.ok) {
       return NextResponse.json(result, { status: 500 });

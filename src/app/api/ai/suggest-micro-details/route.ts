@@ -39,10 +39,14 @@ Generate 12 specific micro-detail suggestions for this scene.
 Each should be a descriptive phrase for a small visual element that adds richness.
 Include a mix of: atmospheric effects, wear/age signs, light interactions, and small environmental elements.`;
 
-    const result = await callOpenRouter([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ]);
+    const appUrl = request.headers.get("origin") || request.nextUrl.origin;
+    const result = await callOpenRouter(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      { appUrl }
+    );
 
     if (!result.ok) {
       return NextResponse.json(result, { status: 500 });

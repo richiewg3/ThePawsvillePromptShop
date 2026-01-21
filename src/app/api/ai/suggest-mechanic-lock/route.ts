@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { callOpenRouter, createJsonSystemPrompt } from "@/lib/openrouter";
+import { callPerplexity, createJsonSystemPrompt } from "@/lib/perplexity";
 import { MechanicLockSuggestionsSchema } from "@/lib/schemas";
 
 export async function POST(request: NextRequest) {
@@ -38,14 +38,10 @@ Generate 5 mechanic lock sentences for this scene.
 Each should be ONE sentence describing a cause→effect relationship visible in the frozen moment.
 Focus on physical, visual cause-and-effect that the image generator can render.`;
 
-    const appUrl = request.headers.get("origin") || request.nextUrl.origin;
-    const result = await callOpenRouter(
-      [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      { appUrl }
-    );
+    const result = await callPerplexity([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
 
     if (!result.ok) {
       return NextResponse.json(result, { status: 500 });

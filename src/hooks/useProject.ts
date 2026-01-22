@@ -280,9 +280,25 @@ export function useProject(): UseProjectReturn {
   const [isSaving, setIsSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   
-  // Refs for auto-save
+  // Refs for auto-save - using refs to avoid stale closures
   const autoSaveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const pendingSaveRef = useRef<boolean>(false);
+  const currentProjectRef = useRef<Project | null>(null);
+  const storageModeRef = useRef<"azure" | "local">("local");
+  const isSavingRef = useRef<boolean>(false);
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    currentProjectRef.current = currentProject;
+  }, [currentProject]);
+
+  useEffect(() => {
+    storageModeRef.current = storageMode;
+  }, [storageMode]);
+
+  useEffect(() => {
+    isSavingRef.current = isSaving;
+  }, [isSaving]);
 
   // Get current prompt
   const currentPrompt = currentProject?.prompts.find((p) => p.id === currentPromptId) || null;
@@ -327,18 +343,28 @@ export function useProject(): UseProjectReturn {
   // ============================================
 
   const saveNow = useCallback(async () => {
-    if (!currentProject || isSaving) return;
+    // Use refs to get the latest values and avoid stale closure issues
+    const projectToSave = currentProjectRef.current;
+    const mode = storageModeRef.current;
+    
+    if (!projectToSave || isSavingRef.current) return;
     
     setIsSaving(true);
+    isSavingRef.current = true;
     pendingSaveRef.current = false;
     
-    await apiSaveProject(currentProject, storageMode);
-    
-    setIsSaving(false);
-    setLastSaved(new Date());
-  }, [currentProject, storageMode, isSaving]);
+    try {
+      await apiSaveProject(projectToSave, mode);
+      setLastSaved(new Date());
+    } catch (error) {
+      console.error("Error saving project:", error);
+    } finally {
+      setIsSaving(false);
+      isSavingRef.current = false;
+    }
+  }, []); // No dependencies needed - we use refs
 
-  // Schedule auto-save
+  // Schedule auto-save - debounced to 3 seconds for better UX
   const scheduleAutoSave = useCallback(() => {
     pendingSaveRef.current = true;
     
@@ -350,7 +376,7 @@ export function useProject(): UseProjectReturn {
       if (pendingSaveRef.current) {
         saveNow();
       }
-    }, 30000); // 30 seconds
+    }, 3000); // 3 seconds - reduced from 30s for better responsiveness
   }, [saveNow]);
 
   // Cleanup auto-save timeout on unmount
@@ -404,16 +430,17 @@ export function useProject(): UseProjectReturn {
   }, []);
 
   const closeProject = useCallback(() => {
-    // Save before closing
-    if (currentProject && pendingSaveRef.current) {
+    // Save before closing if there are pending changes
+    if (currentProjectRef.current && pendingSaveRef.current) {
       saveNow();
     }
     
     setCurrentProject(null);
+    currentProjectRef.current = null;
     setCurrentPromptIdState(null);
     setCurrentProjectId(null);
     setCurrentPromptId(null);
-  }, [currentProject, saveNow]);
+  }, [saveNow]);
 
   const createProject = useCallback(async (name: string): Promise<Project> => {
     const { project, storageMode: mode } = await apiCreateProject(name);
@@ -582,16 +609,17 @@ export function useProject(): UseProjectReturn {
   }, [currentPromptId, scheduleAutoSave]);
 
   const saveHistoryEntry = useCallback((note?: string): PromptHistoryEntry | null => {
-    if (!currentProject || !currentPromptId) return null;
+    const project = currentProjectRef.current;
+    if (!project || !currentPromptId) return null;
     
-    const prompt = currentProject.prompts.find((p) => p.id === currentPromptId);
+    const prompt = project.prompts.find((p) => p.id === currentPromptId);
     if (!prompt) return null;
     
     let entry: PromptHistoryEntry | null = null;
     
     setCurrentProject((prev) => {
       if (!prev) return prev;
-      return {
+      const updated = {
         ...prev,
         prompts: prev.prompts.map((p) => {
           if (p.id === currentPromptId) {
@@ -602,18 +630,22 @@ export function useProject(): UseProjectReturn {
         }),
         updatedAt: new Date().toISOString(),
       };
+      // Update ref immediately for the save
+      currentProjectRef.current = updated;
+      return updated;
     });
     
     // Trigger immediate save for history
     saveNow();
     
     return entry;
-  }, [currentProject, currentPromptId, saveNow]);
+  }, [currentPromptId, saveNow]);
 
   const restoreFromHistory = useCallback((historyId: string) => {
-    if (!currentProject || !currentPromptId) return;
+    const project = currentProjectRef.current;
+    if (!project || !currentPromptId) return;
     
-    const prompt = currentProject.prompts.find((p) => p.id === currentPromptId);
+    const prompt = project.prompts.find((p) => p.id === currentPromptId);
     if (!prompt) return;
     
     const historyEntry = prompt.history.find((h) => h.id === historyId);
@@ -637,7 +669,7 @@ export function useProject(): UseProjectReturn {
     });
     
     scheduleAutoSave();
-  }, [currentProject, currentPromptId, scheduleAutoSave]);
+  }, [currentPromptId, scheduleAutoSave]);
 
   return {
     // Project list

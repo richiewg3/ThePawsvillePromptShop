@@ -281,3 +281,41 @@ input, textarea, select {
 .font-body {
   font-family: var(--font-body);
 }
+
+/* Shadow utility */
+.shadow-soft {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+}
+
+/* Mobile-first responsive utilities */
+@media (max-width: 639px) {
+  .card {
+    @apply rounded-xl;
+  }
+  
+  .btn {
+    @apply px-3 py-2 text-sm;
+  }
+  
+  .input, .select, .textarea {
+    @apply px-3 py-2.5 text-sm;
+  }
+  
+  .label {
+    @apply text-xs;
+  }
+}
+
+/* Extra small breakpoint */
+@media (min-width: 480px) {
+  .xs\:block {
+    display: block;
+  }
+}
+
+/* Touch-friendly targets */
+@media (hover: none) and (pointer: coarse) {
+  .btn, .nav-link, .input, .select, .textarea {
+    min-height: 44px;
+  }
+}

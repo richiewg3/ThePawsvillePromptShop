@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   PromptRequest,
   CharacterProfile,
@@ -117,6 +117,15 @@ export default function PromptComposerPage() {
 
   const [qaLoading, setQaLoading] = useState(false);
   const [qaResults, setQaResults] = useState<{ warnings: string[]; suggestedFixes: string[] } | null>(null);
+
+  // Mobile sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Close sidebar when opening a prompt on mobile
+  const handleOpenPrompt = useCallback((id: string) => {
+    openPrompt(id);
+    setSidebarOpen(false);
+  }, [openPrompt]);
 
   // Get current prompt request data (from project or defaults)
   const promptRequest = currentPrompt?.promptRequest || {};
@@ -365,13 +374,60 @@ export default function PromptComposerPage() {
   // RENDER: Project View (with prompts sidebar)
   // ============================================
   return (
-    <div className="animate-fade-in flex h-[calc(100vh-120px)] gap-6">
-      {/* Prompts Sidebar */}
-      <div className="w-72 shrink-0 bg-white rounded-2xl shadow-soft border border-canvas-200 overflow-hidden flex flex-col">
+    <div className="animate-fade-in flex flex-col lg:flex-row lg:h-[calc(100vh-120px)] gap-4 lg:gap-6">
+      {/* Mobile Sidebar Toggle */}
+      <div className="lg:hidden flex items-center justify-between bg-white rounded-xl p-3 shadow-soft border border-canvas-200">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="btn btn-secondary flex items-center gap-2"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            {currentPrompt ? currentPrompt.title : "Select Prompt"}
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          <span className={`text-xs px-2 py-1 rounded-full ${
+            storageMode === "azure" 
+              ? "bg-blue-100 text-blue-700" 
+              : "bg-amber-100 text-amber-700"
+          }`}>
+            {isSaving ? "Saving..." : (storageMode === "azure" ? "Cloud" : "Local")}
+          </span>
+        </div>
+      </div>
+
+      {/* Mobile Sidebar Overlay */}
+      {sidebarOpen && (
+        <div 
+          className="lg:hidden fixed inset-0 bg-black/50 z-40"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
+      {/* Prompts Sidebar - Desktop: always visible, Mobile: slide-in drawer */}
+      <div className={`
+        lg:w-72 lg:shrink-0 lg:relative lg:block
+        fixed inset-y-0 left-0 z-50 w-80 max-w-[85vw]
+        transform transition-transform duration-300 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        bg-white lg:rounded-2xl shadow-soft lg:border lg:border-canvas-200 overflow-hidden flex flex-col
+      `}>
+        {/* Mobile close button */}
+        <button
+          onClick={() => setSidebarOpen(false)}
+          className="lg:hidden absolute top-4 right-4 z-10 p-2 rounded-full bg-canvas-100 hover:bg-canvas-200"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+          </svg>
+        </button>
         <PromptsList
           project={currentProject}
           currentPromptId={currentPrompt?.id || null}
-          onOpenPrompt={openPrompt}
+          onOpenPrompt={handleOpenPrompt}
           onCreatePrompt={createPrompt}
           onDeletePrompt={deletePrompt}
           onRenamePrompt={renamePrompt}
@@ -386,7 +442,7 @@ export default function PromptComposerPage() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto lg:overflow-y-auto">
         {!currentPrompt ? (
           // No prompt selected
           <div className="h-full flex items-center justify-center">
@@ -409,34 +465,34 @@ export default function PromptComposerPage() {
         ) : (
           // Prompt Editor
           <>
-            <div className="flex items-center justify-between mb-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 sm:mb-6">
               <div>
-                <h1 className="font-display text-2xl font-bold text-canvas-800">
+                <h1 className="font-display text-xl sm:text-2xl font-bold text-canvas-800">
                   {currentPrompt.title}
                 </h1>
-                <p className="text-canvas-600 mt-1 text-sm">
+                <p className="text-canvas-600 mt-1 text-xs sm:text-sm hidden sm:block">
                   Editing prompt in project: {currentProject.name}
                 </p>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={handleExport} className="btn btn-secondary">
-                  Export Project
+                <button onClick={handleExport} className="btn btn-secondary text-sm">
+                  Export
                 </button>
-                <button onClick={handleClearPrompt} className="btn btn-ghost text-red-500">
+                <button onClick={handleClearPrompt} className="btn btn-ghost text-red-500 text-sm">
                   Clear
                 </button>
               </div>
             </div>
 
-            <div className="grid gap-6 lg:grid-cols-[1fr,400px]">
+            <div className="grid gap-4 lg:gap-6 xl:grid-cols-[1fr,400px]">
               {/* Main form */}
               <div className="space-y-6">
                 {/* Row 1: Aspect ratio, Output mode, Framing */}
-                <div className="card p-5">
-                  <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
+                <div className="card p-4 sm:p-5">
+                  <h2 className="font-display text-base sm:text-lg font-semibold text-canvas-800 mb-3 sm:mb-4">
                     Output Settings
                   </h2>
-                  <div className="grid gap-4 sm:grid-cols-3">
+                  <div className="grid gap-3 sm:gap-4 sm:grid-cols-3">
                     <div>
                       <label className="label">Aspect Ratio</label>
                       <select
@@ -483,9 +539,9 @@ export default function PromptComposerPage() {
                 </div>
 
                 {/* Scene Heart */}
-                <div className="card p-5">
+                <div className="card p-4 sm:p-5">
                   <label className="label">
-                    Scene Heart <span className="label-hint">(who/what/where — ONE frozen moment)</span>
+                    Scene Heart <span className="label-hint hidden sm:inline">(who/what/where — ONE frozen moment)</span>
                   </label>
                   <textarea
                     className={`textarea min-h-[100px] ${!sceneHeart.trim() ? "border-red-300" : ""}`}
@@ -496,8 +552,8 @@ export default function PromptComposerPage() {
                 </div>
 
                 {/* Cast + Wardrobe */}
-                <div className="card p-5">
-                  <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
+                <div className="card p-4 sm:p-5">
+                  <h2 className="font-display text-base sm:text-lg font-semibold text-canvas-800 mb-3 sm:mb-4">
                     Cast & Wardrobe
                   </h2>
                   <CastWardrobeBinder
@@ -509,11 +565,11 @@ export default function PromptComposerPage() {
                 </div>
 
                 {/* Look & Lens */}
-                <div className="card p-5">
-                  <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
+                <div className="card p-4 sm:p-5">
+                  <h2 className="font-display text-base sm:text-lg font-semibold text-canvas-800 mb-3 sm:mb-4">
                     Look & Lens
                   </h2>
-                  <div className="grid gap-4 lg:grid-cols-2">
+                  <div className="grid gap-4 md:grid-cols-2">
                     <div>
                       <label className="label">Look Family</label>
                       <select
@@ -578,7 +634,7 @@ export default function PromptComposerPage() {
                 </div>
 
                 {/* Environment Anchors */}
-                <div className="card p-5">
+                <div className="card p-4 sm:p-5">
                   <AnchorFields
                     anchors={environmentAnchors}
                     onChange={setEnvironmentAnchors}
@@ -588,8 +644,8 @@ export default function PromptComposerPage() {
                 </div>
 
                 {/* Mechanic Lock & Focus Target */}
-                <div className="card p-5">
-                  <div className="grid gap-4 lg:grid-cols-2">
+                <div className="card p-4 sm:p-5">
+                  <div className="grid gap-4 md:grid-cols-2">
                     <div>
                       <div className="flex items-center justify-between mb-1.5">
                         <label className="label mb-0">
@@ -638,8 +694,8 @@ export default function PromptComposerPage() {
                 </div>
 
                 {/* Micro Packs */}
-                <div className="card p-5">
-                  <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
+                <div className="card p-4 sm:p-5">
+                  <h2 className="font-display text-base sm:text-lg font-semibold text-canvas-800 mb-3 sm:mb-4">
                     Micro Packs
                   </h2>
                   <MicroPackSelectors
@@ -653,7 +709,7 @@ export default function PromptComposerPage() {
                 </div>
 
                 {/* History */}
-                <div className="card p-5">
+                <div className="card p-4 sm:p-5">
                   <PromptHistory
                     history={currentPrompt.history}
                     onRestore={restoreFromHistory}
@@ -662,8 +718,8 @@ export default function PromptComposerPage() {
                 </div>
 
                 {/* Validation */}
-                <div className="card p-5">
-                  <h2 className="font-display text-lg font-semibold text-canvas-800 mb-4">
+                <div className="card p-4 sm:p-5">
+                  <h2 className="font-display text-base sm:text-lg font-semibold text-canvas-800 mb-3 sm:mb-4">
                     Validation
                   </h2>
                   <ValidationPanel 
@@ -696,7 +752,7 @@ export default function PromptComposerPage() {
               </div>
 
               {/* Preview sidebar */}
-              <div className="lg:relative">
+              <div className="xl:sticky xl:top-4 xl:self-start">
                 <PromptPreview
                   compiledText={compiledResult?.text || ""}
                   seedSummary={compiledResult?.seedSummary || ""}

@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { LookFamily, Framing } from "@/lib/schemas";
-import { getLooks, saveLook, updateLook, deleteLook, duplicateLook } from "@/lib/storage";
+import { useProject } from "@/hooks/useProject";
 import { ManagerCard, ManagerHeader, EmptyState } from "@/components/manager-card";
 import { Modal, ModalFooter } from "@/components/modal";
 
@@ -45,18 +45,21 @@ const FRAMING_LABELS: Record<Framing, string> = {
 };
 
 export default function LooksPage() {
-  const [looks, setLooks] = useState<LookFamily[]>([]);
+  // Use the project hook - ALL data comes from here (saved to Azure)
+  const {
+    currentProject,
+    looks,
+    addLook,
+    updateLook,
+    deleteLook,
+    duplicateLook,
+    storageMode,
+    isSaving,
+  } = useProject();
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<LookFormData>(emptyForm);
-
-  useEffect(() => {
-    setLooks(getLooks());
-  }, []);
-
-  const refreshList = () => {
-    setLooks(getLooks());
-  };
 
   const openCreateModal = () => {
     setEditingId(null);
@@ -94,20 +97,19 @@ export default function LooksPage() {
     if (editingId) {
       updateLook(editingId, data);
     } else {
-      saveLook(data);
+      addLook(data);
     }
-    refreshList();
     setIsModalOpen(false);
   };
 
   const handleDuplicate = (id: string) => {
     duplicateLook(id);
-    refreshList();
   };
 
   const handleDelete = (id: string) => {
-    deleteLook(id);
-    refreshList();
+    if (confirm("Delete this look?")) {
+      deleteLook(id);
+    }
   };
 
   const updateProducesSummary = (index: number, value: string) => {
@@ -125,11 +127,46 @@ export default function LooksPage() {
     setFormData({ ...formData, producesSummary: updated.length > 0 ? updated : [""] });
   };
 
+  // Show message if no project is open
+  if (!currentProject) {
+    return (
+      <div className="animate-fade-in">
+        <ManagerHeader
+          title="Look Manager"
+          description="Define lighting, color grade, and finish combinations."
+          icon="🎨"
+          onAdd={() => {}}
+          addLabel="Add Look"
+        />
+        <div className="card p-8 text-center">
+          <div className="text-6xl mb-4">📂</div>
+          <h2 className="text-xl font-semibold text-canvas-800 mb-2">No Project Open</h2>
+          <p className="text-canvas-600 mb-4">
+            Looks are saved within projects. Please open or create a project first from the home page.
+          </p>
+          <a href="/" className="btn btn-primary">
+            Go to Projects
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="animate-fade-in">
       <ManagerHeader
         title="Look Manager"
-        description="Define lighting, color grade, and finish combinations. Each Look includes recommended lens mappings per framing — when using 'Auto' lens mode, the Prompt Composer will automatically select the appropriate lens."
+        description={
+          <>
+            Define lighting, color grade, and finish combinations for <strong>{currentProject.name}</strong>. 
+            Each Look includes recommended lens mappings per framing — when using 'Auto' lens mode, the Prompt Composer will automatically select the appropriate lens.
+            <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+              storageMode === "azure" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+            }`}>
+              {isSaving ? "Saving..." : (storageMode === "azure" ? "Cloud Synced" : "Local")}
+            </span>
+          </>
+        }
         icon="🎨"
         onAdd={openCreateModal}
         addLabel="Add Look"

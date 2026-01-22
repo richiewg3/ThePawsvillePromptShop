@@ -94,7 +94,7 @@ export function ManagerCard({
 
 interface ManagerHeaderProps {
   title: string;
-  description: string;
+  description: React.ReactNode;
   icon: string;
   onAdd: () => void;
   addLabel?: string;

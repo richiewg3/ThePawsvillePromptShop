@@ -1,14 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { CharacterProfile } from "@/lib/schemas";
-import {
-  getCharacters,
-  saveCharacter,
-  updateCharacter,
-  deleteCharacter,
-  duplicateCharacter,
-} from "@/lib/storage";
+import { useProject } from "@/hooks/useProject";
 import { ManagerCard, ManagerHeader, EmptyState } from "@/components/manager-card";
 import { Modal, ModalFooter } from "@/components/modal";
 
@@ -34,19 +28,22 @@ const emptyForm: CharacterFormData = {
 };
 
 export default function CharactersPage() {
-  const [characters, setCharacters] = useState<CharacterProfile[]>([]);
+  // Use the project hook - ALL data comes from here (saved to Azure)
+  const {
+    currentProject,
+    characters,
+    addCharacter,
+    updateCharacter,
+    deleteCharacter,
+    duplicateCharacter,
+    storageMode,
+    isSaving,
+  } = useProject();
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<CharacterFormData>(emptyForm);
   const [showHelpers, setShowHelpers] = useState(false);
-
-  useEffect(() => {
-    setCharacters(getCharacters());
-  }, []);
-
-  const refreshList = () => {
-    setCharacters(getCharacters());
-  };
 
   const openCreateModal = () => {
     setEditingId(null);
@@ -72,20 +69,19 @@ export default function CharactersPage() {
     if (editingId) {
       updateCharacter(editingId, formData);
     } else {
-      saveCharacter(formData);
+      addCharacter(formData);
     }
-    refreshList();
     setIsModalOpen(false);
   };
 
   const handleDuplicate = (id: string) => {
     duplicateCharacter(id);
-    refreshList();
   };
 
   const handleDelete = (id: string) => {
-    deleteCharacter(id);
-    refreshList();
+    if (confirm("Delete this character?")) {
+      deleteCharacter(id);
+    }
   };
 
   const buildInjectedText = () => {
@@ -109,11 +105,47 @@ export default function CharactersPage() {
     }
   };
 
+  // Show message if no project is open
+  if (!currentProject) {
+    return (
+      <div className="animate-fade-in">
+        <ManagerHeader
+          title="Character Manager"
+          description="Create and manage character identity profiles."
+          icon="🦊"
+          onAdd={() => {}}
+          addLabel="Add Character"
+        />
+        <div className="card p-8 text-center">
+          <div className="text-6xl mb-4">📂</div>
+          <h2 className="text-xl font-semibold text-canvas-800 mb-2">No Project Open</h2>
+          <p className="text-canvas-600 mb-4">
+            Characters are saved within projects. Please open or create a project first from the home page.
+          </p>
+          <a href="/" className="btn btn-primary">
+            Go to Projects
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="animate-fade-in">
       <ManagerHeader
         title="Character Manager"
-        description="Create and manage character identity profiles. These define WHO your characters are — species, anatomy, face, and distinctive traits. Outfits are managed separately in Wardrobes."
+        description={
+          <>
+            Create and manage character identity profiles for <strong>{currentProject.name}</strong>. 
+            These define WHO your characters are — species, anatomy, face, and distinctive traits. 
+            Outfits are managed separately in Wardrobes.
+            <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+              storageMode === "azure" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+            }`}>
+              {isSaving ? "Saving..." : (storageMode === "azure" ? "Cloud Synced" : "Local")}
+            </span>
+          </>
+        }
         icon="🦊"
         onAdd={openCreateModal}
         addLabel="Add Character"
@@ -123,7 +155,7 @@ export default function CharactersPage() {
         <EmptyState
           icon="🦊"
           title="No characters yet"
-          description="Create your first character identity profile to start building your cast."
+          description={`Create your first character identity profile for "${currentProject.name}".`}
           actionLabel="Create Character"
           onAction={openCreateModal}
         />

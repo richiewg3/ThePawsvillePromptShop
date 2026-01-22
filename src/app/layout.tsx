@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import Navigation from "@/components/navigation";
-import { StorageInitializer } from "@/components/storage-initializer";
 
 export const metadata: Metadata = {
   title: "The Pawsville Prompt Shop",
@@ -16,7 +15,6 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className="antialiased">
-        <StorageInitializer />
         <div className="min-h-screen flex flex-col">
           <Navigation />
           <main className="flex-1 container mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-7xl">

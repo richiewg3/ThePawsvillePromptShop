@@ -1,14 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { WardrobeProfile } from "@/lib/schemas";
-import {
-  getWardrobes,
-  saveWardrobe,
-  updateWardrobe,
-  deleteWardrobe,
-  duplicateWardrobe,
-} from "@/lib/storage";
+import { useProject } from "@/hooks/useProject";
 import { ManagerCard, ManagerHeader, EmptyState } from "@/components/manager-card";
 import { Modal, ModalFooter } from "@/components/modal";
 
@@ -25,18 +19,21 @@ const emptyForm: WardrobeFormData = {
 };
 
 export default function WardrobesPage() {
-  const [wardrobes, setWardrobes] = useState<WardrobeProfile[]>([]);
+  // Use the project hook - ALL data comes from here (saved to Azure)
+  const {
+    currentProject,
+    wardrobes,
+    addWardrobe,
+    updateWardrobe,
+    deleteWardrobe,
+    duplicateWardrobe,
+    storageMode,
+    isSaving,
+  } = useProject();
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<WardrobeFormData>(emptyForm);
-
-  useEffect(() => {
-    setWardrobes(getWardrobes());
-  }, []);
-
-  const refreshList = () => {
-    setWardrobes(getWardrobes());
-  };
 
   const openCreateModal = () => {
     setEditingId(null);
@@ -66,27 +63,62 @@ export default function WardrobesPage() {
     if (editingId) {
       updateWardrobe(editingId, data);
     } else {
-      saveWardrobe(data);
+      addWardrobe(data);
     }
-    refreshList();
     setIsModalOpen(false);
   };
 
   const handleDuplicate = (id: string) => {
     duplicateWardrobe(id);
-    refreshList();
   };
 
   const handleDelete = (id: string) => {
-    deleteWardrobe(id);
-    refreshList();
+    if (confirm("Delete this wardrobe?")) {
+      deleteWardrobe(id);
+    }
   };
+
+  // Show message if no project is open
+  if (!currentProject) {
+    return (
+      <div className="animate-fade-in">
+        <ManagerHeader
+          title="Wardrobe Manager"
+          description="Create outfit profiles for your characters."
+          icon="👔"
+          onAdd={() => {}}
+          addLabel="Add Wardrobe"
+        />
+        <div className="card p-8 text-center">
+          <div className="text-6xl mb-4">📂</div>
+          <h2 className="text-xl font-semibold text-canvas-800 mb-2">No Project Open</h2>
+          <p className="text-canvas-600 mb-4">
+            Wardrobes are saved within projects. Please open or create a project first from the home page.
+          </p>
+          <a href="/" className="btn btn-primary">
+            Go to Projects
+          </a>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="animate-fade-in">
       <ManagerHeader
         title="Wardrobe Manager"
-        description="Create outfit profiles for your characters. Each wardrobe is a complete outfit — when composing prompts, you'll bind one wardrobe to each character. No variants inside a profile; create separate wardrobes for different outfits."
+        description={
+          <>
+            Create outfit profiles for <strong>{currentProject.name}</strong>. 
+            Each wardrobe is a complete outfit — when composing prompts, you'll bind one wardrobe to each character. 
+            No variants inside a profile; create separate wardrobes for different outfits.
+            <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+              storageMode === "azure" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+            }`}>
+              {isSaving ? "Saving..." : (storageMode === "azure" ? "Cloud Synced" : "Local")}
+            </span>
+          </>
+        }
         icon="👔"
         onAdd={openCreateModal}
         addLabel="Add Wardrobe"
@@ -96,7 +128,7 @@ export default function WardrobesPage() {
         <EmptyState
           icon="👔"
           title="No wardrobes yet"
-          description="Create outfit profiles that can be paired with any character during prompt composition."
+          description={`Create outfit profiles for "${currentProject.name}" that can be paired with any character.`}
           actionLabel="Create Wardrobe"
           onAction={openCreateModal}
         />

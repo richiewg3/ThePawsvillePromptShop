@@ -1,19 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { MicroTexturePack, MicroDetailPack } from "@/lib/schemas";
-import {
-  getMicroTextures,
-  getMicroDetails,
-  saveMicroTexture,
-  saveMicroDetail,
-  updateMicroTexture,
-  updateMicroDetail,
-  deleteMicroTexture,
-  deleteMicroDetail,
-  duplicateMicroTexture,
-  duplicateMicroDetail,
-} from "@/lib/storage";
+import { useProject } from "@/hooks/useProject";
 import { ManagerCard, ManagerHeader, EmptyState } from "@/components/manager-card";
 import { Modal, ModalFooter } from "@/components/modal";
 
@@ -32,22 +21,27 @@ const emptyForm: PackFormData = {
 };
 
 export default function MicroPacksPage() {
-  const [texturePacks, setTexturePacks] = useState<MicroTexturePack[]>([]);
-  const [detailPacks, setDetailPacks] = useState<MicroDetailPack[]>([]);
+  // Use the project hook - ALL data comes from here (saved to Azure)
+  const {
+    currentProject,
+    microTextures,
+    microDetails,
+    addMicroTexture,
+    addMicroDetail,
+    updateMicroTexture,
+    updateMicroDetail,
+    deleteMicroTexture,
+    deleteMicroDetail,
+    duplicateMicroTexture,
+    duplicateMicroDetail,
+    storageMode,
+    isSaving,
+  } = useProject();
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<PackFormData>(emptyForm);
   const [activeTab, setActiveTab] = useState<PackType>("texture");
-
-  useEffect(() => {
-    setTexturePacks(getMicroTextures());
-    setDetailPacks(getMicroDetails());
-  }, []);
-
-  const refreshList = () => {
-    setTexturePacks(getMicroTextures());
-    setDetailPacks(getMicroDetails());
-  };
 
   const openCreateModal = (type: PackType) => {
     setEditingId(null);
@@ -89,37 +83,36 @@ export default function MicroPacksPage() {
       if (editingId) {
         updateMicroTexture(editingId, data);
       } else {
-        saveMicroTexture(data);
+        addMicroTexture(data);
       }
     } else {
       if (editingId) {
         updateMicroDetail(editingId, data);
       } else {
-        saveMicroDetail(data);
+        addMicroDetail(data);
       }
     }
-    refreshList();
     setIsModalOpen(false);
   };
 
   const handleDuplicateTexture = (id: string) => {
     duplicateMicroTexture(id);
-    refreshList();
   };
 
   const handleDuplicateDetail = (id: string) => {
     duplicateMicroDetail(id);
-    refreshList();
   };
 
   const handleDeleteTexture = (id: string) => {
-    deleteMicroTexture(id);
-    refreshList();
+    if (confirm("Delete this texture pack?")) {
+      deleteMicroTexture(id);
+    }
   };
 
   const handleDeleteDetail = (id: string) => {
-    deleteMicroDetail(id);
-    refreshList();
+    if (confirm("Delete this detail pack?")) {
+      deleteMicroDetail(id);
+    }
   };
 
   const updateItem = (index: number, value: string) => {
@@ -137,11 +130,46 @@ export default function MicroPacksPage() {
     setFormData({ ...formData, items: updated.length > 0 ? updated : [""] });
   };
 
+  // Show message if no project is open
+  if (!currentProject) {
+    return (
+      <div className="animate-fade-in">
+        <ManagerHeader
+          title="Micro Packs Manager"
+          description="Create packs of micro-textures and micro-details."
+          icon="🔬"
+          onAdd={() => {}}
+          addLabel="Add Pack"
+        />
+        <div className="card p-8 text-center">
+          <div className="text-6xl mb-4">📂</div>
+          <h2 className="text-xl font-semibold text-canvas-800 mb-2">No Project Open</h2>
+          <p className="text-canvas-600 mb-4">
+            Micro Packs are saved within projects. Please open or create a project first from the home page.
+          </p>
+          <a href="/" className="btn btn-primary">
+            Go to Projects
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="animate-fade-in">
       <ManagerHeader
         title="Micro Packs Manager"
-        description="Create packs of micro-textures (surface details) and micro-details (environmental elements). Select multiple packs during prompt composition to add rich detail to your scenes."
+        description={
+          <>
+            Create packs of micro-textures (surface details) and micro-details (environmental elements) for <strong>{currentProject.name}</strong>. 
+            Select multiple packs during prompt composition to add rich detail to your scenes.
+            <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+              storageMode === "azure" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+            }`}>
+              {isSaving ? "Saving..." : (storageMode === "azure" ? "Cloud Synced" : "Local")}
+            </span>
+          </>
+        }
         icon="🔬"
         onAdd={() => openCreateModal(activeTab)}
         addLabel={`Add ${activeTab === "texture" ? "Texture" : "Detail"} Pack`}
@@ -153,20 +181,20 @@ export default function MicroPacksPage() {
           onClick={() => setActiveTab("texture")}
           className={`btn ${activeTab === "texture" ? "btn-primary" : "btn-secondary"}`}
         >
-          🧵 Micro-Textures ({texturePacks.length})
+          🧵 Micro-Textures ({microTextures.length})
         </button>
         <button
           onClick={() => setActiveTab("detail")}
           className={`btn ${activeTab === "detail" ? "btn-primary" : "btn-secondary"}`}
         >
-          ✨ Micro-Details ({detailPacks.length})
+          ✨ Micro-Details ({microDetails.length})
         </button>
       </div>
 
       {/* Texture Packs Tab */}
       {activeTab === "texture" && (
         <>
-          {texturePacks.length === 0 ? (
+          {microTextures.length === 0 ? (
             <EmptyState
               icon="🧵"
               title="No texture packs yet"
@@ -176,7 +204,7 @@ export default function MicroPacksPage() {
             />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {texturePacks.map((pack) => (
+              {microTextures.map((pack) => (
                 <ManagerCard
                   key={pack.id}
                   title={pack.uiName}
@@ -203,7 +231,7 @@ export default function MicroPacksPage() {
       {/* Detail Packs Tab */}
       {activeTab === "detail" && (
         <>
-          {detailPacks.length === 0 ? (
+          {microDetails.length === 0 ? (
             <EmptyState
               icon="✨"
               title="No detail packs yet"
@@ -213,7 +241,7 @@ export default function MicroPacksPage() {
             />
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {detailPacks.map((pack) => (
+              {microDetails.map((pack) => (
                 <ManagerCard
                   key={pack.id}
                   title={pack.uiName}

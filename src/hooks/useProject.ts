@@ -30,37 +30,58 @@ function getLocalProjects(): Project[] {
   if (typeof window === "undefined") return [];
   try {
     const raw = localStorage.getItem(LOCAL_STORAGE_KEYS.projects);
-    if (!raw) return [];
-    return JSON.parse(raw);
-  } catch {
+    if (!raw) {
+      console.log("[localStorage] No projects found in localStorage");
+      return [];
+    }
+    const projects = JSON.parse(raw);
+    console.log("[localStorage] Loaded", projects.length, "projects from localStorage");
+    return projects;
+  } catch (e) {
+    console.error("[localStorage] Error parsing projects:", e);
     return [];
   }
 }
 
 function setLocalProjects(projects: Project[]): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(LOCAL_STORAGE_KEYS.projects, JSON.stringify(projects));
+  try {
+    const json = JSON.stringify(projects);
+    localStorage.setItem(LOCAL_STORAGE_KEYS.projects, json);
+    console.log("[localStorage] Saved", projects.length, "projects to localStorage (", json.length, "bytes)");
+  } catch (e) {
+    console.error("[localStorage] Error saving projects:", e);
+    throw e;
+  }
 }
 
 function getLocalProject(id: string): Project | null {
   const projects = getLocalProjects();
-  return projects.find((p) => p.id === id) || null;
+  const project = projects.find((p) => p.id === id) || null;
+  console.log("[localStorage] getLocalProject", id, "found:", !!project);
+  return project;
 }
 
 function saveLocalProject(project: Project): void {
+  console.log("[localStorage] saveLocalProject called for:", project.id, project.name);
   const projects = getLocalProjects();
   const index = projects.findIndex((p) => p.id === project.id);
   if (index >= 0) {
     projects[index] = project;
+    console.log("[localStorage] Updated existing project at index", index);
   } else {
     projects.push(project);
+    console.log("[localStorage] Added new project, total count:", projects.length);
   }
   setLocalProjects(projects);
 }
 
 function deleteLocalProject(id: string): void {
+  console.log("[localStorage] deleteLocalProject called for:", id);
   const projects = getLocalProjects();
-  setLocalProjects(projects.filter((p) => p.id !== id));
+  const filtered = projects.filter((p) => p.id !== id);
+  console.log("[localStorage] Deleted project, count changed from", projects.length, "to", filtered.length);
+  setLocalProjects(filtered);
 }
 
 function getCurrentProjectId(): string | null {
@@ -95,15 +116,18 @@ function setCurrentPromptId(id: string | null): void {
 // API HELPERS
 // ============================================
 
-async function fetchProjects(): Promise<{ projects: ProjectListItem[]; storageMode: "azure" | "local" }> {
+async function fetchProjects(): Promise<{ projects: ProjectListItem[]; storageMode: "azure" | "local"; error?: string }> {
   try {
     const response = await fetch("/api/projects");
     const data = await response.json();
+    
+    console.log("[useProject] fetchProjects API response:", { ok: data.ok, storageMode: data.data?.storageMode });
     
     if (data.ok) {
       if (data.data.storageMode === "local") {
         // Fallback to localStorage
         const localProjects = getLocalProjects();
+        console.log("[useProject] Using local storage, found", localProjects.length, "projects");
         return {
           projects: localProjects.map((p) => ({
             id: p.id,
@@ -115,11 +139,12 @@ async function fetchProjects(): Promise<{ projects: ProjectListItem[]; storageMo
           storageMode: "local",
         };
       }
+      console.log("[useProject] Using Azure storage, found", data.data.projects?.length || 0, "projects");
       return data.data;
     }
     throw new Error(data.error?.message || "Failed to fetch projects");
   } catch (error) {
-    console.error("Error fetching projects, falling back to local:", error);
+    console.error("[useProject] Error fetching projects, falling back to local:", error);
     const localProjects = getLocalProjects();
     return {
       projects: localProjects.map((p) => ({
@@ -130,6 +155,7 @@ async function fetchProjects(): Promise<{ projects: ProjectListItem[]; storageMo
         promptCount: p.prompts.length,
       })),
       storageMode: "local",
+      error: error instanceof Error ? error.message : "Unknown error",
     };
   }
 }
@@ -139,21 +165,27 @@ async function fetchProject(id: string): Promise<{ project: Project | null; stor
     const response = await fetch(`/api/projects/${id}`);
     const data = await response.json();
     
+    console.log("[useProject] fetchProject API response for", id, ":", { ok: data.ok, storageMode: data.data?.storageMode });
+    
     if (data.ok) {
       if (data.data.storageMode === "local") {
+        const localProject = getLocalProject(id);
+        console.log("[useProject] Using local storage for project", id, "found:", !!localProject);
         return {
-          project: getLocalProject(id),
+          project: localProject,
           storageMode: "local",
         };
       }
+      console.log("[useProject] Using Azure storage for project", id);
       return data.data;
     }
     if (response.status === 404) {
+      console.log("[useProject] Project not found in Azure, checking local");
       return { project: getLocalProject(id), storageMode: "local" };
     }
     throw new Error(data.error?.message || "Failed to fetch project");
   } catch (error) {
-    console.error("Error fetching project, falling back to local:", error);
+    console.error("[useProject] Error fetching project, falling back to local:", error);
     return {
       project: getLocalProject(id),
       storageMode: "local",
@@ -161,12 +193,20 @@ async function fetchProject(id: string): Promise<{ project: Project | null; stor
   }
 }
 
-async function apiSaveProject(project: Project, storageMode: "azure" | "local"): Promise<void> {
+async function apiSaveProject(project: Project, storageMode: "azure" | "local"): Promise<{ success: boolean; error?: string }> {
+  console.log("[useProject] apiSaveProject called for", project.id, "mode:", storageMode);
+  
   // Always save to localStorage as backup
-  saveLocalProject(project);
+  try {
+    saveLocalProject(project);
+    console.log("[useProject] Saved to localStorage successfully");
+  } catch (e) {
+    console.error("[useProject] Failed to save to localStorage:", e);
+    return { success: false, error: "Failed to save to local storage" };
+  }
   
   if (storageMode === "local") {
-    return;
+    return { success: true };
   }
 
   try {
@@ -177,14 +217,20 @@ async function apiSaveProject(project: Project, storageMode: "azure" | "local"):
     });
     const data = await response.json();
     if (!data.ok) {
-      console.error("Error saving to Azure, local backup saved:", data.error);
+      console.error("[useProject] Error saving to Azure, local backup saved:", data.error);
+      return { success: false, error: data.error?.message || "Azure save failed" };
     }
+    console.log("[useProject] Saved to Azure successfully");
+    return { success: true };
   } catch (error) {
-    console.error("Error saving project to Azure, local backup saved:", error);
+    console.error("[useProject] Error saving project to Azure, local backup saved:", error);
+    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
   }
 }
 
 async function apiCreateProject(name: string): Promise<{ project: Project; storageMode: "azure" | "local" }> {
+  console.log("[useProject] apiCreateProject called with name:", name);
+  
   try {
     const response = await fetch("/api/projects", {
       method: "POST",
@@ -193,17 +239,29 @@ async function apiCreateProject(name: string): Promise<{ project: Project; stora
     });
     const data = await response.json();
     
+    console.log("[useProject] Create project API response:", { ok: data.ok, storageMode: data.data?.storageMode });
+    
     if (data.ok) {
       const project = data.data.project;
       // Always save locally as backup
-      saveLocalProject(project);
+      try {
+        saveLocalProject(project);
+        console.log("[useProject] Project saved to localStorage as backup:", project.id);
+      } catch (e) {
+        console.error("[useProject] Failed to save project to localStorage:", e);
+      }
       return data.data;
     }
     throw new Error(data.error?.message || "Failed to create project");
   } catch (error) {
-    console.error("Error creating project via API, creating locally:", error);
+    console.error("[useProject] Error creating project via API, creating locally:", error);
     const project = createNewProject(name);
-    saveLocalProject(project);
+    try {
+      saveLocalProject(project);
+      console.log("[useProject] Project created and saved locally:", project.id);
+    } catch (e) {
+      console.error("[useProject] Failed to save project to localStorage:", e);
+    }
     return { project, storageMode: "local" };
   }
 }
@@ -243,7 +301,7 @@ export interface UseProjectReturn {
   currentProject: Project | null;
   projectLoading: boolean;
   openProject: (id: string) => Promise<void>;
-  closeProject: () => void;
+  closeProject: () => Promise<void>;
   createProject: (name: string) => Promise<Project>;
   deleteProject: (id: string) => Promise<void>;
   renameProject: (name: string) => void;
@@ -266,7 +324,7 @@ export interface UseProjectReturn {
   storageMode: "azure" | "local";
   isSaving: boolean;
   lastSaved: Date | null;
-  saveNow: () => Promise<void>;
+  saveNow: () => Promise<boolean>;
 }
 
 export function useProject(): UseProjectReturn {
@@ -342,22 +400,39 @@ export function useProject(): UseProjectReturn {
   // AUTO-SAVE (every 30 seconds)
   // ============================================
 
-  const saveNow = useCallback(async () => {
+  const saveNow = useCallback(async (): Promise<boolean> => {
     // Use refs to get the latest values and avoid stale closure issues
     const projectToSave = currentProjectRef.current;
     const mode = storageModeRef.current;
     
-    if (!projectToSave || isSavingRef.current) return;
+    console.log("[useProject] saveNow called, project:", projectToSave?.id, "mode:", mode);
+    
+    if (!projectToSave) {
+      console.log("[useProject] saveNow: No project to save");
+      return false;
+    }
+    
+    if (isSavingRef.current) {
+      console.log("[useProject] saveNow: Already saving, skipping");
+      return false;
+    }
     
     setIsSaving(true);
     isSavingRef.current = true;
     pendingSaveRef.current = false;
     
     try {
-      await apiSaveProject(projectToSave, mode);
-      setLastSaved(new Date());
+      const result = await apiSaveProject(projectToSave, mode);
+      if (result.success) {
+        setLastSaved(new Date());
+        console.log("[useProject] saveNow completed successfully");
+      } else {
+        console.error("[useProject] saveNow failed:", result.error);
+      }
+      return result.success;
     } catch (error) {
-      console.error("Error saving project:", error);
+      console.error("[useProject] Error saving project:", error);
+      return false;
     } finally {
       setIsSaving(false);
       isSavingRef.current = false;
@@ -429,10 +504,13 @@ export function useProject(): UseProjectReturn {
     setProjectLoading(false);
   }, []);
 
-  const closeProject = useCallback(() => {
+  const closeProject = useCallback(async () => {
+    console.log("[useProject] closeProject called");
+    
     // Save before closing if there are pending changes
     if (currentProjectRef.current && pendingSaveRef.current) {
-      saveNow();
+      console.log("[useProject] Saving pending changes before closing");
+      await saveNow();
     }
     
     setCurrentProject(null);
@@ -440,19 +518,32 @@ export function useProject(): UseProjectReturn {
     setCurrentPromptIdState(null);
     setCurrentProjectId(null);
     setCurrentPromptId(null);
-  }, [saveNow]);
+    
+    // Refresh the projects list to show updated data
+    await refreshProjects();
+    
+    console.log("[useProject] closeProject completed");
+  }, [saveNow, refreshProjects]);
 
   const createProject = useCallback(async (name: string): Promise<Project> => {
+    console.log("[useProject] createProject callback starting for:", name);
     const { project, storageMode: mode } = await apiCreateProject(name);
     setStorageMode(mode);
+    storageModeRef.current = mode;
+    
+    // Open the new project
+    setCurrentProject(project);
+    currentProjectRef.current = project;
+    setCurrentProjectId(project.id);
+    
+    // Ensure the project is saved immediately (don't rely on auto-save)
+    console.log("[useProject] Triggering immediate save for new project");
+    await apiSaveProject(project, mode);
     
     // Refresh project list
     await refreshProjects();
     
-    // Open the new project
-    setCurrentProject(project);
-    setCurrentProjectId(project.id);
-    
+    console.log("[useProject] createProject completed for:", project.id);
     return project;
   }, [refreshProjects]);
 

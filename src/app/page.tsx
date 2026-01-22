@@ -1,14 +1,8 @@
 "use client";
 
-import { useState, useEffect, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
 import {
   PromptRequest,
-  CharacterProfile,
-  WardrobeProfile,
-  LookFamily,
-  LensProfile,
-  MicroTexturePack,
-  MicroDetailPack,
   CastMember,
   AspectRatio,
   OutputMode,
@@ -16,16 +10,8 @@ import {
   LensMode,
   validatePromptRequest,
 } from "@/lib/schemas";
-import {
-  getCharacters,
-  getWardrobes,
-  getLooks,
-  getLenses,
-  getMicroTextures,
-  getMicroDetails,
-  downloadJson,
-} from "@/lib/storage";
 import { compilePrompt, CompilerContext } from "@/lib/compiler";
+import { downloadJson } from "@/lib/storage";
 import { CastWardrobeBinder } from "@/components/cast-wardrobe-binder";
 import { AnchorFields } from "@/components/anchor-fields";
 import { MicroPackSelectors } from "@/components/micro-pack-selectors";
@@ -63,7 +49,7 @@ const FRAMING_OPTIONS: { value: Framing; label: string; desc: string }[] = [
 ];
 
 export default function PromptComposerPage() {
-  // Project management hook
+  // Project management hook - ALL DATA comes from here, saved to Azure
   const {
     projects,
     projectsLoading,
@@ -85,19 +71,18 @@ export default function PromptComposerPage() {
     updatePromptRequest,
     saveHistoryEntry,
     restoreFromHistory,
+    // ALL data comes from the project (saved to Azure)
+    characters,
+    wardrobes,
+    looks,
+    lenses,
+    microTextures,
+    microDetails,
     storageMode,
     isSaving,
     lastSaved,
     saveNow,
   } = useProject();
-
-  // Library data
-  const [characters, setCharacters] = useState<CharacterProfile[]>([]);
-  const [wardrobes, setWardrobes] = useState<WardrobeProfile[]>([]);
-  const [looks, setLooks] = useState<LookFamily[]>([]);
-  const [lenses, setLenses] = useState<LensProfile[]>([]);
-  const [microTextures, setMicroTextures] = useState<MicroTexturePack[]>([]);
-  const [microDetails, setMicroDetails] = useState<MicroDetailPack[]>([]);
 
   // AI suggestion state
   const [anchorModalOpen, setAnchorModalOpen] = useState(false);
@@ -145,7 +130,7 @@ export default function PromptComposerPage() {
   const selectedMicroTextures = promptRequest.selectedMicroTextures || [];
   const selectedMicroDetails = promptRequest.selectedMicroDetails || [];
 
-  // Form field setters - all update via hook
+  // Form field setters - all update via hook (saved to Azure)
   const setAspectRatio = (value: AspectRatio) => updatePromptRequest({ aspectRatio: value });
   const setOutputMode = (value: OutputMode) => updatePromptRequest({ outputMode: value });
   const setSceneHeart = (value: string) => updatePromptRequest({ sceneHeart: value });
@@ -159,16 +144,6 @@ export default function PromptComposerPage() {
   const setFocusTarget = (value: string) => updatePromptRequest({ focusTarget: value });
   const setSelectedMicroTextures = (value: string[]) => updatePromptRequest({ selectedMicroTextures: value });
   const setSelectedMicroDetails = (value: string[]) => updatePromptRequest({ selectedMicroDetails: value });
-
-  // Load library data
-  useEffect(() => {
-    setCharacters(getCharacters());
-    setWardrobes(getWardrobes());
-    setLooks(getLooks());
-    setLenses(getLenses());
-    setMicroTextures(getMicroTextures());
-    setMicroDetails(getMicroDetails());
-  }, []);
 
   // Build full request for validation/compilation
   const fullPromptRequest: Partial<PromptRequest> = useMemo(
@@ -556,12 +531,19 @@ export default function PromptComposerPage() {
                   <h2 className="font-display text-base sm:text-lg font-semibold text-canvas-800 mb-3 sm:mb-4">
                     Cast & Wardrobe
                   </h2>
-                  <CastWardrobeBinder
-                    characters={characters}
-                    wardrobes={wardrobes}
-                    cast={cast}
-                    onChange={setCast}
-                  />
+                  {characters.length === 0 ? (
+                    <div className="text-center py-8 bg-canvas-50 rounded-lg border border-dashed border-canvas-300">
+                      <p className="text-canvas-600 mb-2">No characters in this project yet.</p>
+                      <p className="text-sm text-canvas-500">Go to the Characters page to create characters for this project.</p>
+                    </div>
+                  ) : (
+                    <CastWardrobeBinder
+                      characters={characters}
+                      wardrobes={wardrobes}
+                      cast={cast}
+                      onChange={setCast}
+                    />
+                  )}
                 </div>
 
                 {/* Look & Lens */}

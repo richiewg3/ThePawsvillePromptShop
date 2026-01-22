@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { LensProfile, LensCategory } from "@/lib/schemas";
-import { getLenses, saveLens, updateLens, deleteLens, duplicateLens } from "@/lib/storage";
+import { useProject } from "@/hooks/useProject";
 import { ManagerCard, ManagerHeader, EmptyState } from "@/components/manager-card";
 import { Modal, ModalFooter } from "@/components/modal";
 
@@ -36,18 +36,21 @@ const CATEGORY_COLORS: Record<LensCategory, string> = {
 };
 
 export default function LensesPage() {
-  const [lenses, setLenses] = useState<LensProfile[]>([]);
+  // Use the project hook - ALL data comes from here (saved to Azure)
+  const {
+    currentProject,
+    lenses,
+    addLens,
+    updateLens,
+    deleteLens,
+    duplicateLens,
+    storageMode,
+    isSaving,
+  } = useProject();
+
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<LensFormData>(emptyForm);
-
-  useEffect(() => {
-    setLenses(getLenses());
-  }, []);
-
-  const refreshList = () => {
-    setLenses(getLenses());
-  };
 
   const openCreateModal = () => {
     setEditingId(null);
@@ -79,20 +82,19 @@ export default function LensesPage() {
     if (editingId) {
       updateLens(editingId, data);
     } else {
-      saveLens(data);
+      addLens(data);
     }
-    refreshList();
     setIsModalOpen(false);
   };
 
   const handleDuplicate = (id: string) => {
     duplicateLens(id);
-    refreshList();
   };
 
   const handleDelete = (id: string) => {
-    deleteLens(id);
-    refreshList();
+    if (confirm("Delete this lens?")) {
+      deleteLens(id);
+    }
   };
 
   // Group lenses by category
@@ -102,11 +104,46 @@ export default function LensesPage() {
     return acc;
   }, {} as Record<LensCategory, LensProfile[]>);
 
+  // Show message if no project is open
+  if (!currentProject) {
+    return (
+      <div className="animate-fade-in">
+        <ManagerHeader
+          title="Lens Manager"
+          description="Define optical characteristics for different focal lengths."
+          icon="📷"
+          onAdd={() => {}}
+          addLabel="Add Lens"
+        />
+        <div className="card p-8 text-center">
+          <div className="text-6xl mb-4">📂</div>
+          <h2 className="text-xl font-semibold text-canvas-800 mb-2">No Project Open</h2>
+          <p className="text-canvas-600 mb-4">
+            Lenses are saved within projects. Please open or create a project first from the home page.
+          </p>
+          <a href="/" className="btn btn-primary">
+            Go to Projects
+          </a>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="animate-fade-in">
       <ManagerHeader
         title="Lens Manager"
-        description="Define optical characteristics for different focal lengths. Each lens profile describes how that focal length affects perspective, depth of field, and the overall feel of the image."
+        description={
+          <>
+            Define optical characteristics for <strong>{currentProject.name}</strong>. 
+            Each lens profile describes how that focal length affects perspective, depth of field, and the overall feel of the image.
+            <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+              storageMode === "azure" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+            }`}>
+              {isSaving ? "Saving..." : (storageMode === "azure" ? "Cloud Synced" : "Local")}
+            </span>
+          </>
+        }
         icon="📷"
         onAdd={openCreateModal}
         addLabel="Add Lens"

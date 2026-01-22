@@ -1,3 +1,39 @@
+/**
+ * Storage utilities
+ * 
+ * NOTE: Project data (characters, wardrobes, lenses, looks, etc.) is now stored
+ * within projects and saved to Azure Blob Storage. The localStorage functions
+ * in this file are kept only for backwards compatibility and should not be used
+ * for new development.
+ * 
+ * Use the useProject() hook from @/hooks/useProject for all data operations.
+ */
+
+// ============================================
+// UTILITY FUNCTIONS (still used)
+// ============================================
+
+/**
+ * Download a JSON object as a file
+ */
+export function downloadJson(data: object, filename: string): void {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ============================================
+// DEPRECATED: Local Storage Functions
+// 
+// These functions are kept for backwards compatibility only.
+// All project data should now be managed through the useProject() hook
+// which saves to Azure Blob Storage.
+// ============================================
+
 import {
   CharacterProfile,
   WardrobeProfile,
@@ -12,7 +48,6 @@ import {
   LookFamilySchema,
   MicroTexturePackSchema,
   MicroDetailPackSchema,
-  PromptRequestSchema,
 } from "./schemas";
 import { z } from "zod";
 import {
@@ -21,10 +56,6 @@ import {
   defaultMicroTexturePacks,
   defaultMicroDetailPacks,
 } from "@/data/defaults";
-
-// ============================================
-// STORAGE KEYS
-// ============================================
 
 const STORAGE_KEYS = {
   characters: "pawsville_characters",
@@ -36,10 +67,6 @@ const STORAGE_KEYS = {
   currentDraft: "pawsville_current_draft",
   initialized: "pawsville_initialized",
 } as const;
-
-// ============================================
-// GENERIC CRUD HELPERS
-// ============================================
 
 function getItem<T>(key: string, schema: z.ZodType<T>): T[] {
   if (typeof window === "undefined") return [];
@@ -67,17 +94,13 @@ function now(): string {
   return new Date().toISOString();
 }
 
-// ============================================
-// INITIALIZATION
-// ============================================
-
+/** @deprecated Use useProject() hook instead */
 export function initializeStorage(): void {
   if (typeof window === "undefined") return;
   
   const initialized = localStorage.getItem(STORAGE_KEYS.initialized);
   if (initialized) return;
 
-  // Seed defaults
   setItem(STORAGE_KEYS.looks, defaultLookFamilies);
   setItem(STORAGE_KEYS.lenses, defaultLensProfiles);
   setItem(STORAGE_KEYS.microTextures, defaultMicroTexturePacks);
@@ -88,14 +111,12 @@ export function initializeStorage(): void {
   localStorage.setItem(STORAGE_KEYS.initialized, "true");
 }
 
-// ============================================
-// CHARACTER PROFILES
-// ============================================
-
+/** @deprecated Use useProject() hook instead */
 export function getCharacters(): CharacterProfile[] {
   return getItem(STORAGE_KEYS.characters, CharacterProfileSchema);
 }
 
+/** @deprecated Use useProject() hook instead */
 export function saveCharacter(profile: Omit<CharacterProfile, "id" | "createdAt" | "updatedAt">): CharacterProfile {
   const characters = getCharacters();
   const newProfile: CharacterProfile = {
@@ -109,6 +130,7 @@ export function saveCharacter(profile: Omit<CharacterProfile, "id" | "createdAt"
   return newProfile;
 }
 
+/** @deprecated Use useProject() hook instead */
 export function updateCharacter(id: string, updates: Partial<CharacterProfile>): CharacterProfile | null {
   const characters = getCharacters();
   const index = characters.findIndex((c) => c.id === id);
@@ -117,14 +139,15 @@ export function updateCharacter(id: string, updates: Partial<CharacterProfile>):
   characters[index] = {
     ...characters[index],
     ...updates,
-    id, // Preserve ID
-    createdAt: characters[index].createdAt, // Preserve creation date
+    id,
+    createdAt: characters[index].createdAt,
     updatedAt: now(),
   };
   setItem(STORAGE_KEYS.characters, characters);
   return characters[index];
 }
 
+/** @deprecated Use useProject() hook instead */
 export function deleteCharacter(id: string): boolean {
   const characters = getCharacters();
   const filtered = characters.filter((c) => c.id !== id);
@@ -133,6 +156,7 @@ export function deleteCharacter(id: string): boolean {
   return true;
 }
 
+/** @deprecated Use useProject() hook instead */
 export function duplicateCharacter(id: string): CharacterProfile | null {
   const characters = getCharacters();
   const original = characters.find((c) => c.id === id);
@@ -150,14 +174,12 @@ export function duplicateCharacter(id: string): CharacterProfile | null {
   return duplicate;
 }
 
-// ============================================
-// WARDROBE PROFILES
-// ============================================
-
+/** @deprecated Use useProject() hook instead */
 export function getWardrobes(): WardrobeProfile[] {
   return getItem(STORAGE_KEYS.wardrobes, WardrobeProfileSchema);
 }
 
+/** @deprecated Use useProject() hook instead */
 export function saveWardrobe(profile: Omit<WardrobeProfile, "id" | "createdAt" | "updatedAt">): WardrobeProfile {
   const wardrobes = getWardrobes();
   const newProfile: WardrobeProfile = {
@@ -171,6 +193,7 @@ export function saveWardrobe(profile: Omit<WardrobeProfile, "id" | "createdAt" |
   return newProfile;
 }
 
+/** @deprecated Use useProject() hook instead */
 export function updateWardrobe(id: string, updates: Partial<WardrobeProfile>): WardrobeProfile | null {
   const wardrobes = getWardrobes();
   const index = wardrobes.findIndex((w) => w.id === id);
@@ -187,6 +210,7 @@ export function updateWardrobe(id: string, updates: Partial<WardrobeProfile>): W
   return wardrobes[index];
 }
 
+/** @deprecated Use useProject() hook instead */
 export function deleteWardrobe(id: string): boolean {
   const wardrobes = getWardrobes();
   const filtered = wardrobes.filter((w) => w.id !== id);
@@ -195,6 +219,7 @@ export function deleteWardrobe(id: string): boolean {
   return true;
 }
 
+/** @deprecated Use useProject() hook instead */
 export function duplicateWardrobe(id: string): WardrobeProfile | null {
   const wardrobes = getWardrobes();
   const original = wardrobes.find((w) => w.id === id);
@@ -212,14 +237,12 @@ export function duplicateWardrobe(id: string): WardrobeProfile | null {
   return duplicate;
 }
 
-// ============================================
-// LENS PROFILES
-// ============================================
-
+/** @deprecated Use useProject() hook instead */
 export function getLenses(): LensProfile[] {
   return getItem(STORAGE_KEYS.lenses, LensProfileSchema);
 }
 
+/** @deprecated Use useProject() hook instead */
 export function saveLens(profile: Omit<LensProfile, "id" | "createdAt" | "updatedAt">): LensProfile {
   const lenses = getLenses();
   const newProfile: LensProfile = {
@@ -233,6 +256,7 @@ export function saveLens(profile: Omit<LensProfile, "id" | "createdAt" | "update
   return newProfile;
 }
 
+/** @deprecated Use useProject() hook instead */
 export function updateLens(id: string, updates: Partial<LensProfile>): LensProfile | null {
   const lenses = getLenses();
   const index = lenses.findIndex((l) => l.id === id);
@@ -249,6 +273,7 @@ export function updateLens(id: string, updates: Partial<LensProfile>): LensProfi
   return lenses[index];
 }
 
+/** @deprecated Use useProject() hook instead */
 export function deleteLens(id: string): boolean {
   const lenses = getLenses();
   const filtered = lenses.filter((l) => l.id !== id);
@@ -257,6 +282,7 @@ export function deleteLens(id: string): boolean {
   return true;
 }
 
+/** @deprecated Use useProject() hook instead */
 export function duplicateLens(id: string): LensProfile | null {
   const lenses = getLenses();
   const original = lenses.find((l) => l.id === id);
@@ -274,14 +300,12 @@ export function duplicateLens(id: string): LensProfile | null {
   return duplicate;
 }
 
-// ============================================
-// LOOK FAMILIES
-// ============================================
-
+/** @deprecated Use useProject() hook instead */
 export function getLooks(): LookFamily[] {
   return getItem(STORAGE_KEYS.looks, LookFamilySchema);
 }
 
+/** @deprecated Use useProject() hook instead */
 export function saveLook(profile: Omit<LookFamily, "id" | "createdAt" | "updatedAt">): LookFamily {
   const looks = getLooks();
   const newProfile: LookFamily = {
@@ -295,6 +319,7 @@ export function saveLook(profile: Omit<LookFamily, "id" | "createdAt" | "updated
   return newProfile;
 }
 
+/** @deprecated Use useProject() hook instead */
 export function updateLook(id: string, updates: Partial<LookFamily>): LookFamily | null {
   const looks = getLooks();
   const index = looks.findIndex((l) => l.id === id);
@@ -311,6 +336,7 @@ export function updateLook(id: string, updates: Partial<LookFamily>): LookFamily
   return looks[index];
 }
 
+/** @deprecated Use useProject() hook instead */
 export function deleteLook(id: string): boolean {
   const looks = getLooks();
   const filtered = looks.filter((l) => l.id !== id);
@@ -319,6 +345,7 @@ export function deleteLook(id: string): boolean {
   return true;
 }
 
+/** @deprecated Use useProject() hook instead */
 export function duplicateLook(id: string): LookFamily | null {
   const looks = getLooks();
   const original = looks.find((l) => l.id === id);
@@ -336,14 +363,12 @@ export function duplicateLook(id: string): LookFamily | null {
   return duplicate;
 }
 
-// ============================================
-// MICRO TEXTURE PACKS
-// ============================================
-
+/** @deprecated Use useProject() hook instead */
 export function getMicroTextures(): MicroTexturePack[] {
   return getItem(STORAGE_KEYS.microTextures, MicroTexturePackSchema);
 }
 
+/** @deprecated Use useProject() hook instead */
 export function saveMicroTexture(pack: Omit<MicroTexturePack, "id" | "createdAt" | "updatedAt">): MicroTexturePack {
   const packs = getMicroTextures();
   const newPack: MicroTexturePack = {
@@ -357,6 +382,7 @@ export function saveMicroTexture(pack: Omit<MicroTexturePack, "id" | "createdAt"
   return newPack;
 }
 
+/** @deprecated Use useProject() hook instead */
 export function updateMicroTexture(id: string, updates: Partial<MicroTexturePack>): MicroTexturePack | null {
   const packs = getMicroTextures();
   const index = packs.findIndex((p) => p.id === id);
@@ -373,6 +399,7 @@ export function updateMicroTexture(id: string, updates: Partial<MicroTexturePack
   return packs[index];
 }
 
+/** @deprecated Use useProject() hook instead */
 export function deleteMicroTexture(id: string): boolean {
   const packs = getMicroTextures();
   const filtered = packs.filter((p) => p.id !== id);
@@ -381,6 +408,7 @@ export function deleteMicroTexture(id: string): boolean {
   return true;
 }
 
+/** @deprecated Use useProject() hook instead */
 export function duplicateMicroTexture(id: string): MicroTexturePack | null {
   const packs = getMicroTextures();
   const original = packs.find((p) => p.id === id);
@@ -398,14 +426,12 @@ export function duplicateMicroTexture(id: string): MicroTexturePack | null {
   return duplicate;
 }
 
-// ============================================
-// MICRO DETAIL PACKS
-// ============================================
-
+/** @deprecated Use useProject() hook instead */
 export function getMicroDetails(): MicroDetailPack[] {
   return getItem(STORAGE_KEYS.microDetails, MicroDetailPackSchema);
 }
 
+/** @deprecated Use useProject() hook instead */
 export function saveMicroDetail(pack: Omit<MicroDetailPack, "id" | "createdAt" | "updatedAt">): MicroDetailPack {
   const packs = getMicroDetails();
   const newPack: MicroDetailPack = {
@@ -419,6 +445,7 @@ export function saveMicroDetail(pack: Omit<MicroDetailPack, "id" | "createdAt" |
   return newPack;
 }
 
+/** @deprecated Use useProject() hook instead */
 export function updateMicroDetail(id: string, updates: Partial<MicroDetailPack>): MicroDetailPack | null {
   const packs = getMicroDetails();
   const index = packs.findIndex((p) => p.id === id);
@@ -435,6 +462,7 @@ export function updateMicroDetail(id: string, updates: Partial<MicroDetailPack>)
   return packs[index];
 }
 
+/** @deprecated Use useProject() hook instead */
 export function deleteMicroDetail(id: string): boolean {
   const packs = getMicroDetails();
   const filtered = packs.filter((p) => p.id !== id);
@@ -443,6 +471,7 @@ export function deleteMicroDetail(id: string): boolean {
   return true;
 }
 
+/** @deprecated Use useProject() hook instead */
 export function duplicateMicroDetail(id: string): MicroDetailPack | null {
   const packs = getMicroDetails();
   const original = packs.find((p) => p.id === id);
@@ -460,10 +489,7 @@ export function duplicateMicroDetail(id: string): MicroDetailPack | null {
   return duplicate;
 }
 
-// ============================================
-// PROMPT REQUEST (DRAFT)
-// ============================================
-
+/** @deprecated Use useProject() hook instead */
 export function getCurrentDraft(): Partial<PromptRequest> | null {
   if (typeof window === "undefined") return null;
   try {
@@ -475,6 +501,7 @@ export function getCurrentDraft(): Partial<PromptRequest> | null {
   }
 }
 
+/** @deprecated Use useProject() hook instead */
 export function saveCurrentDraft(draft: Partial<PromptRequest>): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(STORAGE_KEYS.currentDraft, JSON.stringify({
@@ -483,156 +510,13 @@ export function saveCurrentDraft(draft: Partial<PromptRequest>): void {
   }));
 }
 
+/** @deprecated Use useProject() hook instead */
 export function clearCurrentDraft(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(STORAGE_KEYS.currentDraft);
 }
 
-// ============================================
-// EXPORT / IMPORT
-// ============================================
-
-export interface ExportData {
-  version: "1.0";
-  exportedAt: string;
-  characters?: CharacterProfile[];
-  wardrobes?: WardrobeProfile[];
-  looks?: LookFamily[];
-  lenses?: LensProfile[];
-  microTextures?: MicroTexturePack[];
-  microDetails?: MicroDetailPack[];
-  promptRequest?: Partial<PromptRequest>;
-}
-
-export function exportAll(): ExportData {
-  return {
-    version: "1.0",
-    exportedAt: now(),
-    characters: getCharacters(),
-    wardrobes: getWardrobes(),
-    looks: getLooks(),
-    lenses: getLenses(),
-    microTextures: getMicroTextures(),
-    microDetails: getMicroDetails(),
-    promptRequest: getCurrentDraft() || undefined,
-  };
-}
-
-export function exportPromptRequest(): ExportData {
-  const draft = getCurrentDraft();
-  return {
-    version: "1.0",
-    exportedAt: now(),
-    promptRequest: draft || undefined,
-  };
-}
-
-export function importData(data: ExportData): { imported: string[]; errors: string[] } {
-  const imported: string[] = [];
-  const errors: string[] = [];
-
-  try {
-    if (data.characters?.length) {
-      const existing = getCharacters();
-      const newItems = data.characters.filter(
-        (c) => !existing.some((e) => e.id === c.id)
-      );
-      setItem(STORAGE_KEYS.characters, [...existing, ...newItems]);
-      imported.push(`${newItems.length} characters`);
-    }
-  } catch (e) {
-    errors.push(`Characters: ${e}`);
-  }
-
-  try {
-    if (data.wardrobes?.length) {
-      const existing = getWardrobes();
-      const newItems = data.wardrobes.filter(
-        (w) => !existing.some((e) => e.id === w.id)
-      );
-      setItem(STORAGE_KEYS.wardrobes, [...existing, ...newItems]);
-      imported.push(`${newItems.length} wardrobes`);
-    }
-  } catch (e) {
-    errors.push(`Wardrobes: ${e}`);
-  }
-
-  try {
-    if (data.looks?.length) {
-      const existing = getLooks();
-      const newItems = data.looks.filter(
-        (l) => !existing.some((e) => e.id === l.id)
-      );
-      setItem(STORAGE_KEYS.looks, [...existing, ...newItems]);
-      imported.push(`${newItems.length} looks`);
-    }
-  } catch (e) {
-    errors.push(`Looks: ${e}`);
-  }
-
-  try {
-    if (data.lenses?.length) {
-      const existing = getLenses();
-      const newItems = data.lenses.filter(
-        (l) => !existing.some((e) => e.id === l.id)
-      );
-      setItem(STORAGE_KEYS.lenses, [...existing, ...newItems]);
-      imported.push(`${newItems.length} lenses`);
-    }
-  } catch (e) {
-    errors.push(`Lenses: ${e}`);
-  }
-
-  try {
-    if (data.microTextures?.length) {
-      const existing = getMicroTextures();
-      const newItems = data.microTextures.filter(
-        (m) => !existing.some((e) => e.id === m.id)
-      );
-      setItem(STORAGE_KEYS.microTextures, [...existing, ...newItems]);
-      imported.push(`${newItems.length} micro texture packs`);
-    }
-  } catch (e) {
-    errors.push(`Micro textures: ${e}`);
-  }
-
-  try {
-    if (data.microDetails?.length) {
-      const existing = getMicroDetails();
-      const newItems = data.microDetails.filter(
-        (m) => !existing.some((e) => e.id === m.id)
-      );
-      setItem(STORAGE_KEYS.microDetails, [...existing, ...newItems]);
-      imported.push(`${newItems.length} micro detail packs`);
-    }
-  } catch (e) {
-    errors.push(`Micro details: ${e}`);
-  }
-
-  try {
-    if (data.promptRequest) {
-      saveCurrentDraft(data.promptRequest);
-      imported.push("prompt request draft");
-    }
-  } catch (e) {
-    errors.push(`Prompt request: ${e}`);
-  }
-
-  return { imported, errors };
-}
-
-// Download helper
-export function downloadJson(data: object, filename: string): void {
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  URL.revokeObjectURL(url);
-}
-
-// Reset to defaults
+/** @deprecated Use useProject() hook instead */
 export function resetToDefaults(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(STORAGE_KEYS.initialized);

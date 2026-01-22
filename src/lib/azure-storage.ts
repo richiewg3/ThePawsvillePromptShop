@@ -1,8 +1,22 @@
 import {
   BlobServiceClient,
   ContainerClient,
-  StorageSharedKeyCredential,
 } from "@azure/storage-blob";
+import {
+  CharacterProfile,
+  WardrobeProfile,
+  LensProfile,
+  LookFamily,
+  MicroTexturePack,
+  MicroDetailPack,
+  PromptRequest,
+} from "./schemas";
+import {
+  defaultLookFamilies,
+  defaultLensProfiles,
+  defaultMicroTexturePacks,
+  defaultMicroDetailPacks,
+} from "@/data/defaults";
 
 // ============================================
 // AZURE BLOB STORAGE CLIENT
@@ -43,8 +57,45 @@ export function isAzureStorageAvailable(): boolean {
 }
 
 // ============================================
-// PROJECT OPERATIONS
+// PROJECT TYPES - COMPLETE PROJECT DATA
 // ============================================
+
+export interface PromptHistoryEntry {
+  id: string;
+  promptRequest: Partial<PromptRequest>;
+  savedAt: string;
+  note?: string;
+}
+
+export interface ProjectPrompt {
+  id: string;
+  title: string;
+  promptRequest: Partial<PromptRequest>;
+  createdAt: string;
+  updatedAt: string;
+  history: PromptHistoryEntry[];
+}
+
+/**
+ * Complete Project structure containing ALL data.
+ * When you save a project, EVERYTHING is saved to Azure.
+ * When you load a project, EVERYTHING is loaded from Azure.
+ */
+export interface Project {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  
+  // ALL project data - saved to Azure
+  characters: CharacterProfile[];
+  wardrobes: WardrobeProfile[];
+  lenses: LensProfile[];
+  looks: LookFamily[];
+  microTextures: MicroTexturePack[];
+  microDetails: MicroDetailPack[];
+  prompts: ProjectPrompt[];
+}
 
 export interface ProjectMetadata {
   id: string;
@@ -55,7 +106,13 @@ export interface ProjectMetadata {
 
 export interface ProjectListItem extends ProjectMetadata {
   promptCount: number;
+  characterCount: number;
+  wardrobeCount: number;
 }
+
+// ============================================
+// PROJECT OPERATIONS
+// ============================================
 
 /**
  * List all projects from Azure Blob Storage
@@ -79,7 +136,7 @@ export async function listProjects(): Promise<ProjectListItem[]> {
           const blobClient = client.getBlobClient(blob.name);
           const downloadResponse = await blobClient.download();
           const content = await streamToString(downloadResponse.readableStreamBody!);
-          const project = JSON.parse(content);
+          const project = JSON.parse(content) as Project;
           
           projects.push({
             id: project.id,
@@ -87,6 +144,8 @@ export async function listProjects(): Promise<ProjectListItem[]> {
             createdAt: project.createdAt,
             updatedAt: project.updatedAt,
             promptCount: project.prompts?.length || 0,
+            characterCount: project.characters?.length || 0,
+            wardrobeCount: project.wardrobes?.length || 0,
           });
         } catch (e) {
           console.error(`Error reading project ${blob.name}:`, e);
@@ -105,7 +164,7 @@ export async function listProjects(): Promise<ProjectListItem[]> {
 }
 
 /**
- * Get a single project by ID
+ * Get a single project by ID - returns COMPLETE project with ALL data
  */
 export async function getProject(projectId: string): Promise<Project | null> {
   const client = getContainerClient();
@@ -124,7 +183,19 @@ export async function getProject(projectId: string): Promise<Project | null> {
 
     const downloadResponse = await blobClient.download();
     const content = await streamToString(downloadResponse.readableStreamBody!);
-    return JSON.parse(content) as Project;
+    const project = JSON.parse(content) as Project;
+    
+    // Ensure all arrays exist (for backwards compatibility with old data)
+    return {
+      ...project,
+      characters: project.characters || [],
+      wardrobes: project.wardrobes || [],
+      lenses: project.lenses || defaultLensProfiles,
+      looks: project.looks || defaultLookFamilies,
+      microTextures: project.microTextures || defaultMicroTexturePacks,
+      microDetails: project.microDetails || defaultMicroDetailPacks,
+      prompts: project.prompts || [],
+    };
   } catch (error) {
     console.error(`Error getting project ${projectId}:`, error);
     throw error;
@@ -132,7 +203,8 @@ export async function getProject(projectId: string): Promise<Project | null> {
 }
 
 /**
- * Save a project to Azure Blob Storage
+ * Save a COMPLETE project to Azure Blob Storage
+ * This saves ALL data: characters, wardrobes, lenses, looks, microTextures, microDetails, prompts
  */
 export async function saveProject(project: Project): Promise<void> {
   const client = getContainerClient();
@@ -153,6 +225,8 @@ export async function saveProject(project: Project): Promise<void> {
         blobContentType: "application/json",
       },
     });
+    
+    console.log(`[Azure] Saved project ${project.id} with ${project.characters.length} characters, ${project.wardrobes.length} wardrobes, ${project.prompts.length} prompts`);
   } catch (error) {
     console.error(`Error saving project ${project.id}:`, error);
     throw error;
@@ -199,37 +273,13 @@ async function streamToString(readableStream: NodeJS.ReadableStream): Promise<st
 }
 
 // ============================================
-// PROJECT TYPES (matching schemas)
+// PROJECT FACTORY FUNCTIONS
 // ============================================
 
-import { PromptRequest } from "./schemas";
-
-export interface PromptHistoryEntry {
-  id: string;
-  promptRequest: Partial<PromptRequest>;
-  savedAt: string;
-  note?: string;
-}
-
-export interface ProjectPrompt {
-  id: string;
-  title: string;
-  promptRequest: Partial<PromptRequest>;
-  createdAt: string;
-  updatedAt: string;
-  history: PromptHistoryEntry[];
-}
-
-export interface Project {
-  id: string;
-  name: string;
-  createdAt: string;
-  updatedAt: string;
-  prompts: ProjectPrompt[];
-}
-
 /**
- * Create a new empty project
+ * Create a new empty project with default data
+ * Characters and wardrobes start empty - user creates them
+ * Looks, lenses, micro packs are pre-seeded with defaults
  */
 export function createNewProject(name: string): Project {
   const now = new Date().toISOString();
@@ -238,6 +288,15 @@ export function createNewProject(name: string): Project {
     name,
     createdAt: now,
     updatedAt: now,
+    // Empty - user creates these
+    characters: [],
+    wardrobes: [],
+    // Pre-seeded with defaults
+    lenses: defaultLensProfiles.map(l => ({ ...l, id: crypto.randomUUID() })),
+    looks: defaultLookFamilies.map(l => ({ ...l, id: crypto.randomUUID() })),
+    microTextures: defaultMicroTexturePacks.map(m => ({ ...m, id: crypto.randomUUID() })),
+    microDetails: defaultMicroDetailPacks.map(m => ({ ...m, id: crypto.randomUUID() })),
+    // Empty prompts
     prompts: [],
   };
 }

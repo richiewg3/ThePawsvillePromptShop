@@ -19,10 +19,10 @@ export default function RootLayout({
         <StorageInitializer />
         <div className="min-h-screen flex flex-col">
           <Navigation />
-          <main className="flex-1 container mx-auto px-4 py-6 max-w-7xl">
+          <main className="flex-1 container mx-auto px-3 sm:px-4 py-4 sm:py-6 max-w-7xl">
             {children}
           </main>
-          <footer className="py-4 text-center text-sm text-canvas-500">
+          <footer className="py-3 sm:py-4 text-center text-xs sm:text-sm text-canvas-500">
             <p>The Pawsville Prompt Shop — Crafting prompts with care</p>
           </footer>
         </div>

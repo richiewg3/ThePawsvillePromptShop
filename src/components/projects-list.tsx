@@ -67,13 +67,13 @@ export function ProjectsList({
 
   return (
     <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
         <div>
-          <h1 className="font-display text-3xl font-bold text-canvas-800 flex items-center gap-3">
-            <span className="text-4xl">&#128194;</span>
+          <h1 className="font-display text-2xl sm:text-3xl font-bold text-canvas-800 flex items-center gap-2 sm:gap-3">
+            <span className="text-3xl sm:text-4xl">&#128194;</span>
             Projects
           </h1>
-          <p className="text-canvas-600 mt-1 flex items-center gap-2">
+          <p className="text-canvas-600 mt-1 flex flex-wrap items-center gap-2 text-sm sm:text-base">
             Manage your prompt projects
             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
               storageMode === "azure" 
@@ -88,13 +88,13 @@ export function ProjectsList({
           <button
             onClick={onRefresh}
             disabled={loading}
-            className="btn btn-secondary"
+            className="btn btn-secondary text-sm sm:text-base"
           >
-            {loading ? "Refreshing..." : "Refresh"}
+            {loading ? "..." : "Refresh"}
           </button>
           <button
             onClick={() => setShowCreateForm(true)}
-            className="btn btn-primary"
+            className="btn btn-primary text-sm sm:text-base"
           >
             + New Project
           </button>
@@ -103,9 +103,9 @@ export function ProjectsList({
 
       {/* Create Project Form */}
       {showCreateForm && (
-        <div className="card p-5 mb-6 border-2 border-paw-200">
+        <div className="card p-4 sm:p-5 mb-6 border-2 border-paw-200">
           <h3 className="font-semibold text-canvas-800 mb-3">Create New Project</h3>
-          <div className="flex gap-3">
+          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
             <input
               type="text"
               className="input flex-1"
@@ -118,22 +118,24 @@ export function ProjectsList({
               }}
               autoFocus
             />
-            <button
-              onClick={handleCreateProject}
-              disabled={isCreating || !newProjectName.trim()}
-              className="btn btn-primary"
-            >
-              {isCreating ? "Creating..." : "Create"}
-            </button>
-            <button
-              onClick={() => {
-                setShowCreateForm(false);
-                setNewProjectName("");
-              }}
-              className="btn btn-secondary"
-            >
-              Cancel
-            </button>
+            <div className="flex gap-2 sm:gap-3">
+              <button
+                onClick={handleCreateProject}
+                disabled={isCreating || !newProjectName.trim()}
+                className="btn btn-primary flex-1 sm:flex-none"
+              >
+                {isCreating ? "Creating..." : "Create"}
+              </button>
+              <button
+                onClick={() => {
+                  setShowCreateForm(false);
+                  setNewProjectName("");
+                }}
+                className="btn btn-secondary flex-1 sm:flex-none"
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -159,11 +161,11 @@ export function ProjectsList({
           </button>
         </div>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {projects.map((project) => (
             <div
               key={project.id}
-              className="card p-5 hover:shadow-lg transition-shadow cursor-pointer group relative"
+              className="card p-4 sm:p-5 hover:shadow-lg transition-shadow cursor-pointer group relative"
               onClick={() => onOpenProject(project.id)}
             >
               <div className="flex items-start justify-between">
@@ -181,7 +183,7 @@ export function ProjectsList({
                     handleDeleteProject(project.id, project.name);
                   }}
                   disabled={deletingId === project.id}
-                  className="p-2 text-canvas-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                  className="p-2 text-canvas-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors sm:opacity-0 sm:group-hover:opacity-100"
                   title="Delete project"
                 >
                   {deletingId === project.id ? (
@@ -193,7 +195,7 @@ export function ProjectsList({
                   )}
                 </button>
               </div>
-              <div className="mt-4 pt-4 border-t border-canvas-100 text-xs text-canvas-500">
+              <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-canvas-100 text-xs text-canvas-500">
                 <div className="flex justify-between">
                   <span>Created: {formatDate(project.createdAt)}</span>
                 </div>

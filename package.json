@@ -21,6 +21,7 @@
   "homepage": "https://github.com/richiewg3/ThePawsvillePromptShop#readme",
   "description": "A Sora prompt compiler for creating structured, deterministic prompts",
   "dependencies": {
+    "@azure/storage-blob": "^12.30.0",
     "@types/node": "^25.0.9",
     "@types/react": "^19.2.9",
     "@types/react-dom": "^19.2.3",

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ProjectListItem } from "@/lib/azure-storage";
 
 interface ProjectsListProps {
@@ -11,6 +11,21 @@ interface ProjectsListProps {
   onCreateProject: (name: string) => Promise<void>;
   onDeleteProject: (id: string) => Promise<void>;
   onRefresh: () => Promise<void>;
+}
+
+// Debug helper to check localStorage directly
+function checkLocalStorage(): { projectCount: number; projectNames: string[] } {
+  try {
+    const raw = localStorage.getItem("pawsville_projects");
+    if (!raw) return { projectCount: 0, projectNames: [] };
+    const projects = JSON.parse(raw);
+    return {
+      projectCount: projects.length,
+      projectNames: projects.map((p: { name: string }) => p.name),
+    };
+  } catch {
+    return { projectCount: 0, projectNames: [] };
+  }
 }
 
 export function ProjectsList({
@@ -26,6 +41,15 @@ export function ProjectsList({
   const [isCreating, setIsCreating] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [showDebug, setShowDebug] = useState(false);
+  const [localStorageInfo, setLocalStorageInfo] = useState<{ projectCount: number; projectNames: string[] }>({ projectCount: 0, projectNames: [] });
+
+  // Check localStorage on mount and when projects change
+  useEffect(() => {
+    const info = checkLocalStorage();
+    setLocalStorageInfo(info);
+    console.log("[ProjectsList] localStorage check:", info);
+  }, [projects]);
 
   const handleCreateProject = async () => {
     if (!newProjectName.trim()) return;
@@ -75,13 +99,17 @@ export function ProjectsList({
           </h1>
           <p className="text-canvas-600 mt-1 flex flex-wrap items-center gap-2 text-sm sm:text-base">
             Manage your prompt projects
-            <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-              storageMode === "azure" 
-                ? "bg-blue-100 text-blue-700" 
-                : "bg-amber-100 text-amber-700"
-            }`}>
+            <button
+              onClick={() => setShowDebug(!showDebug)}
+              className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium cursor-pointer hover:opacity-80 ${
+                storageMode === "azure" 
+                  ? "bg-blue-100 text-blue-700" 
+                  : "bg-amber-100 text-amber-700"
+              }`}
+              title="Click for storage debug info"
+            >
               {storageMode === "azure" ? "Cloud Storage" : "Local Storage"}
-            </span>
+            </button>
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -100,6 +128,41 @@ export function ProjectsList({
           </button>
         </div>
       </div>
+
+      {/* Debug Info Panel */}
+      {showDebug && (
+        <div className="card p-4 mb-6 bg-gray-50 border-2 border-gray-200">
+          <h3 className="font-semibold text-gray-800 mb-2 flex items-center gap-2">
+            Storage Debug Info
+            <button
+              onClick={() => setShowDebug(false)}
+              className="ml-auto text-gray-400 hover:text-gray-600"
+            >
+              Close
+            </button>
+          </h3>
+          <div className="text-sm text-gray-600 space-y-1">
+            <p><strong>Storage Mode:</strong> {storageMode}</p>
+            <p><strong>Projects from API/Hook:</strong> {projects.length}</p>
+            <p><strong>Projects in localStorage:</strong> {localStorageInfo.projectCount}</p>
+            {localStorageInfo.projectNames.length > 0 && (
+              <p><strong>Local Project Names:</strong> {localStorageInfo.projectNames.join(", ")}</p>
+            )}
+            {storageMode === "local" && (
+              <p className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded text-amber-700">
+                <strong>Note:</strong> Running in local storage mode. To enable cloud storage, 
+                add your Azure Storage connection string to the <code className="bg-amber-100 px-1">.env.local</code> file.
+              </p>
+            )}
+            {storageMode === "azure" && projects.length === 0 && localStorageInfo.projectCount > 0 && (
+              <p className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-blue-700">
+                <strong>Note:</strong> You have local projects but cloud storage shows empty. 
+                Your projects may need to be synced to the cloud.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Create Project Form */}
       {showCreateForm && (

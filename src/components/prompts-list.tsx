@@ -11,12 +11,12 @@ interface PromptsListProps {
   onDeletePrompt: (id: string) => void;
   onRenamePrompt: (id: string, title: string) => void;
   onDuplicatePrompt: (id: string) => void;
-  onCloseProject: () => void;
+  onCloseProject: () => Promise<void>;
   onRenameProject: (name: string) => void;
   storageMode: "azure" | "local";
   isSaving: boolean;
   lastSaved: Date | null;
-  onSaveNow: () => void;
+  onSaveNow: () => Promise<boolean>;
 }
 
 export function PromptsList({
@@ -40,6 +40,15 @@ export function PromptsList({
   const [projectNameInput, setProjectNameInput] = useState(project.name);
   const [editingPromptId, setEditingPromptId] = useState<string | null>(null);
   const [promptTitleInput, setPromptTitleInput] = useState("");
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "success" | "error">("idle");
+
+  const handleManualSave = async () => {
+    setSaveStatus("saving");
+    const success = await onSaveNow();
+    setSaveStatus(success ? "success" : "error");
+    // Reset status after 2 seconds
+    setTimeout(() => setSaveStatus("idle"), 2000);
+  };
 
   const handleCreatePrompt = () => {
     if (!newPromptTitle.trim()) return;
@@ -94,7 +103,11 @@ export function PromptsList({
       <div className="p-4 border-b border-canvas-200 bg-canvas-50">
         <div className="flex items-center justify-between mb-2">
           <button
-            onClick={onCloseProject}
+            onClick={async () => {
+              // Save before closing
+              await handleManualSave();
+              await onCloseProject();
+            }}
             className="text-sm text-canvas-500 hover:text-canvas-700 flex items-center gap-1"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -142,14 +155,30 @@ export function PromptsList({
         )}
 
         {/* Save status */}
-        <div className="flex items-center gap-2 mt-2 text-xs text-canvas-500">
-          <span className={isSaving ? "animate-pulse" : ""}>
-            {isSaving ? "Saving..." : formatLastSaved()}
-          </span>
-          {!isSaving && (
+        <div className="flex items-center gap-2 mt-2 text-xs">
+          {saveStatus === "success" ? (
+            <span className="text-green-600 flex items-center gap-1">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              Saved!
+            </span>
+          ) : saveStatus === "error" ? (
+            <span className="text-red-600 flex items-center gap-1">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+              Save failed
+            </span>
+          ) : (
+            <span className={`text-canvas-500 ${isSaving || saveStatus === "saving" ? "animate-pulse" : ""}`}>
+              {isSaving || saveStatus === "saving" ? "Saving..." : formatLastSaved()}
+            </span>
+          )}
+          {!isSaving && saveStatus !== "saving" && (
             <button
-              onClick={onSaveNow}
-              className="text-paw-600 hover:text-paw-700 underline"
+              onClick={handleManualSave}
+              className="text-paw-600 hover:text-paw-700 underline ml-auto"
             >
               Save now
             </button>

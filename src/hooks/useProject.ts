@@ -21,44 +21,88 @@ import {
 } from "@/lib/schemas";
 
 // ============================================
-// SESSION STORAGE KEYS (just for current session, not data)
+// LOCAL STORAGE - BACKUP FOR PROJECT DATA
+// This ensures data is NEVER lost, even if Azure has issues
 // ============================================
 
-const SESSION_KEYS = {
+const STORAGE_KEYS = {
+  projects: "pawsville_projects_v2",
   currentProjectId: "pawsville_current_project_id",
   currentPromptId: "pawsville_current_prompt_id",
 } as const;
 
+function getLocalProjects(): Project[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.projects);
+    if (!raw) return [];
+    return JSON.parse(raw);
+  } catch (e) {
+    console.error("[localStorage] Error reading projects:", e);
+    return [];
+  }
+}
+
+function saveLocalProjects(projects: Project[]): void {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(STORAGE_KEYS.projects, JSON.stringify(projects));
+  } catch (e) {
+    console.error("[localStorage] Error saving projects:", e);
+  }
+}
+
+function getLocalProject(id: string): Project | null {
+  const projects = getLocalProjects();
+  return projects.find((p) => p.id === id) || null;
+}
+
+function saveLocalProject(project: Project): void {
+  const projects = getLocalProjects();
+  const index = projects.findIndex((p) => p.id === project.id);
+  if (index >= 0) {
+    projects[index] = project;
+  } else {
+    projects.push(project);
+  }
+  saveLocalProjects(projects);
+}
+
+function deleteLocalProject(id: string): void {
+  const projects = getLocalProjects();
+  saveLocalProjects(projects.filter((p) => p.id !== id));
+}
+
 function getCurrentProjectId(): string | null {
   if (typeof window === "undefined") return null;
-  return sessionStorage.getItem(SESSION_KEYS.currentProjectId);
+  return localStorage.getItem(STORAGE_KEYS.currentProjectId);
 }
 
 function setCurrentProjectId(id: string | null): void {
   if (typeof window === "undefined") return;
   if (id) {
-    sessionStorage.setItem(SESSION_KEYS.currentProjectId, id);
+    localStorage.setItem(STORAGE_KEYS.currentProjectId, id);
   } else {
-    sessionStorage.removeItem(SESSION_KEYS.currentProjectId);
+    localStorage.removeItem(STORAGE_KEYS.currentProjectId);
   }
 }
 
 function getCurrentPromptId(): string | null {
   if (typeof window === "undefined") return null;
-  return sessionStorage.getItem(SESSION_KEYS.currentPromptId);
+  return localStorage.getItem(STORAGE_KEYS.currentPromptId);
 }
 
 function setCurrentPromptId(id: string | null): void {
   if (typeof window === "undefined") return;
   if (id) {
-    sessionStorage.setItem(SESSION_KEYS.currentPromptId, id);
+    localStorage.setItem(STORAGE_KEYS.currentPromptId, id);
   } else {
-    sessionStorage.removeItem(SESSION_KEYS.currentPromptId);
+    localStorage.removeItem(STORAGE_KEYS.currentPromptId);
   }
 }
 
 // ============================================
-// API HELPERS - ALL DATA GOES TO AZURE
+// API HELPERS - AZURE WITH LOCAL BACKUP
 // ============================================
 
 async function fetchProjects(): Promise<{ projects: ProjectListItem[]; storageMode: "azure" | "local"; error?: string }> {
@@ -66,19 +110,42 @@ async function fetchProjects(): Promise<{ projects: ProjectListItem[]; storageMo
     const response = await fetch("/api/projects");
     const data = await response.json();
     
-    console.log("[useProject] fetchProjects API response:", { ok: data.ok, storageMode: data.data?.storageMode });
-    
-    if (data.ok) {
+    if (data.ok && data.data.storageMode === "azure" && data.data.projects?.length > 0) {
+      // Azure has projects - use them
       return {
-        projects: data.data.projects || [],
-        storageMode: data.data.storageMode,
+        projects: data.data.projects,
+        storageMode: "azure",
       };
     }
-    throw new Error(data.error?.message || "Failed to fetch projects");
+    
+    // Fall back to local storage
+    const localProjects = getLocalProjects();
+    return {
+      projects: localProjects.map((p) => ({
+        id: p.id,
+        name: p.name,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+        promptCount: p.prompts?.length || 0,
+        characterCount: p.characters?.length || 0,
+        wardrobeCount: p.wardrobes?.length || 0,
+      })),
+      storageMode: data.data?.storageMode || "local",
+    };
   } catch (error) {
     console.error("[useProject] Error fetching projects:", error);
+    // Fall back to local
+    const localProjects = getLocalProjects();
     return {
-      projects: [],
+      projects: localProjects.map((p) => ({
+        id: p.id,
+        name: p.name,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+        promptCount: p.prompts?.length || 0,
+        characterCount: p.characters?.length || 0,
+        wardrobeCount: p.wardrobes?.length || 0,
+      })),
       storageMode: "local",
       error: error instanceof Error ? error.message : "Unknown error",
     };
@@ -86,34 +153,39 @@ async function fetchProjects(): Promise<{ projects: ProjectListItem[]; storageMo
 }
 
 async function fetchProject(id: string): Promise<{ project: Project | null; storageMode: "azure" | "local" }> {
+  // ALWAYS try local first for immediate response
+  const localProject = getLocalProject(id);
+  
   try {
     const response = await fetch(`/api/projects/${id}`);
     const data = await response.json();
     
-    console.log("[useProject] fetchProject API response for", id, ":", { ok: data.ok, storageMode: data.data?.storageMode });
-    
     if (data.ok && data.data.project) {
+      // Got from Azure - save to local as backup and return
+      saveLocalProject(data.data.project);
       return {
         project: data.data.project,
-        storageMode: data.data.storageMode,
+        storageMode: "azure",
       };
     }
-    if (response.status === 404) {
-      console.log("[useProject] Project not found:", id);
-      return { project: null, storageMode: "local" };
-    }
-    throw new Error(data.error?.message || "Failed to fetch project");
   } catch (error) {
-    console.error("[useProject] Error fetching project:", error);
+    console.error("[useProject] Error fetching from Azure:", error);
+  }
+  
+  // Fall back to local
+  if (localProject) {
     return {
-      project: null,
+      project: localProject,
       storageMode: "local",
     };
   }
+  
+  return { project: null, storageMode: "local" };
 }
 
-async function apiSaveProject(project: Project): Promise<{ success: boolean; error?: string }> {
-  console.log("[useProject] apiSaveProject called for", project.id, "with", project.characters.length, "characters,", project.wardrobes.length, "wardrobes");
+async function apiSaveProject(project: Project): Promise<{ success: boolean; storageMode: "azure" | "local"; error?: string }> {
+  // ALWAYS save to local first (instant backup)
+  saveLocalProject(project);
   
   try {
     const response = await fetch(`/api/projects/${project.id}`, {
@@ -122,21 +194,25 @@ async function apiSaveProject(project: Project): Promise<{ success: boolean; err
       body: JSON.stringify({ project }),
     });
     const data = await response.json();
-    if (!data.ok) {
-      console.error("[useProject] Error saving to Azure:", data.error);
-      return { success: false, error: data.error?.message || "Save failed" };
+    
+    if (data.ok && data.data.storageMode === "azure") {
+      return { success: true, storageMode: "azure" };
     }
-    console.log("[useProject] Saved to Azure successfully");
-    return { success: true };
+    
+    // Azure not available but local save succeeded
+    return { success: true, storageMode: "local" };
   } catch (error) {
-    console.error("[useProject] Error saving project to Azure:", error);
-    return { success: false, error: error instanceof Error ? error.message : "Unknown error" };
+    console.error("[useProject] Error saving to Azure:", error);
+    // Local save already happened, so still success
+    return { 
+      success: true, 
+      storageMode: "local",
+      error: error instanceof Error ? error.message : "Azure save failed, saved locally"
+    };
   }
 }
 
 async function apiCreateProject(name: string): Promise<{ project: Project; storageMode: "azure" | "local" }> {
-  console.log("[useProject] apiCreateProject called with name:", name);
-  
   try {
     const response = await fetch("/api/projects", {
       method: "POST",
@@ -145,31 +221,33 @@ async function apiCreateProject(name: string): Promise<{ project: Project; stora
     });
     const data = await response.json();
     
-    console.log("[useProject] Create project API response:", { ok: data.ok, storageMode: data.data?.storageMode });
-    
-    if (data.ok) {
-      return data.data;
+    if (data.ok && data.data.project) {
+      // Save to local as backup
+      saveLocalProject(data.data.project);
+      return {
+        project: data.data.project,
+        storageMode: data.data.storageMode,
+      };
     }
-    throw new Error(data.error?.message || "Failed to create project");
   } catch (error) {
-    console.error("[useProject] Error creating project via API:", error);
-    // Create locally if API fails
-    const project = createNewProject(name);
-    return { project, storageMode: "local" };
+    console.error("[useProject] Error creating via API:", error);
   }
+  
+  // Fall back to creating locally
+  const project = createNewProject(name);
+  saveLocalProject(project);
+  return { project, storageMode: "local" };
 }
 
 async function apiDeleteProject(id: string): Promise<void> {
+  // Delete from local
+  deleteLocalProject(id);
+  
+  // Try to delete from Azure
   try {
-    const response = await fetch(`/api/projects/${id}`, {
-      method: "DELETE",
-    });
-    const data = await response.json();
-    if (!data.ok) {
-      console.error("Error deleting from Azure:", data.error);
-    }
+    await fetch(`/api/projects/${id}`, { method: "DELETE" });
   } catch (error) {
-    console.error("Error deleting project from Azure:", error);
+    console.error("[useProject] Error deleting from Azure:", error);
   }
 }
 
@@ -218,42 +296,42 @@ export interface UseProjectReturn {
   saveHistoryEntry: (note?: string) => PromptHistoryEntry | null;
   restoreFromHistory: (historyId: string) => void;
   
-  // CHARACTER CRUD - saved to project/Azure
+  // CHARACTER CRUD
   characters: CharacterProfile[];
   addCharacter: (data: Omit<CharacterProfile, "id" | "createdAt" | "updatedAt">) => CharacterProfile;
   updateCharacter: (id: string, updates: Partial<CharacterProfile>) => void;
   deleteCharacter: (id: string) => void;
   duplicateCharacter: (id: string) => CharacterProfile | null;
   
-  // WARDROBE CRUD - saved to project/Azure
+  // WARDROBE CRUD
   wardrobes: WardrobeProfile[];
   addWardrobe: (data: Omit<WardrobeProfile, "id" | "createdAt" | "updatedAt">) => WardrobeProfile;
   updateWardrobe: (id: string, updates: Partial<WardrobeProfile>) => void;
   deleteWardrobe: (id: string) => void;
   duplicateWardrobe: (id: string) => WardrobeProfile | null;
   
-  // LENS CRUD - saved to project/Azure
+  // LENS CRUD
   lenses: LensProfile[];
   addLens: (data: Omit<LensProfile, "id" | "createdAt" | "updatedAt">) => LensProfile;
   updateLens: (id: string, updates: Partial<LensProfile>) => void;
   deleteLens: (id: string) => void;
   duplicateLens: (id: string) => LensProfile | null;
   
-  // LOOK CRUD - saved to project/Azure
+  // LOOK CRUD
   looks: LookFamily[];
   addLook: (data: Omit<LookFamily, "id" | "createdAt" | "updatedAt">) => LookFamily;
   updateLook: (id: string, updates: Partial<LookFamily>) => void;
   deleteLook: (id: string) => void;
   duplicateLook: (id: string) => LookFamily | null;
   
-  // MICRO TEXTURE CRUD - saved to project/Azure
+  // MICRO TEXTURE CRUD
   microTextures: MicroTexturePack[];
   addMicroTexture: (data: Omit<MicroTexturePack, "id" | "createdAt" | "updatedAt">) => MicroTexturePack;
   updateMicroTexture: (id: string, updates: Partial<MicroTexturePack>) => void;
   deleteMicroTexture: (id: string) => void;
   duplicateMicroTexture: (id: string) => MicroTexturePack | null;
   
-  // MICRO DETAIL CRUD - saved to project/Azure
+  // MICRO DETAIL CRUD
   microDetails: MicroDetailPack[];
   addMicroDetail: (data: Omit<MicroDetailPack, "id" | "createdAt" | "updatedAt">) => MicroDetailPack;
   updateMicroDetail: (id: string, updates: Partial<MicroDetailPack>) => void;
@@ -312,26 +390,36 @@ export function useProject(): UseProjectReturn {
     const loadInitialData = async () => {
       setProjectsLoading(true);
       
-      // Load projects
-      const { projects: loadedProjects, storageMode: mode } = await fetchProjects();
-      setProjects(loadedProjects);
-      setStorageMode(mode);
-      
-      // Check for previously open project
+      // Check for previously open project FIRST (from localStorage)
       const savedProjectId = getCurrentProjectId();
+      
       if (savedProjectId) {
-        const { project, storageMode: projectMode } = await fetchProject(savedProjectId);
-        if (project) {
-          setCurrentProject(project);
-          setStorageMode(projectMode);
+        // Try to load the saved project immediately from local
+        const localProject = getLocalProject(savedProjectId);
+        if (localProject) {
+          setCurrentProject(localProject);
+          currentProjectRef.current = localProject;
           
           // Check for previously open prompt
           const savedPromptId = getCurrentPromptId();
-          if (savedPromptId && project.prompts.some((p) => p.id === savedPromptId)) {
+          if (savedPromptId && localProject.prompts.some((p) => p.id === savedPromptId)) {
             setCurrentPromptIdState(savedPromptId);
           }
         }
+        
+        // Then try to get from Azure (will update if newer)
+        const { project, storageMode: projectMode } = await fetchProject(savedProjectId);
+        if (project) {
+          setCurrentProject(project);
+          currentProjectRef.current = project;
+          setStorageMode(projectMode);
+        }
       }
+      
+      // Load projects list
+      const { projects: loadedProjects, storageMode: mode } = await fetchProjects();
+      setProjects(loadedProjects);
+      setStorageMode(mode);
       
       setProjectsLoading(false);
     };
@@ -346,15 +434,11 @@ export function useProject(): UseProjectReturn {
   const saveNow = useCallback(async (): Promise<boolean> => {
     const projectToSave = currentProjectRef.current;
     
-    console.log("[useProject] saveNow called, project:", projectToSave?.id);
-    
     if (!projectToSave) {
-      console.log("[useProject] saveNow: No project to save");
       return false;
     }
     
     if (isSavingRef.current) {
-      console.log("[useProject] saveNow: Already saving, skipping");
       return false;
     }
     
@@ -364,12 +448,8 @@ export function useProject(): UseProjectReturn {
     
     try {
       const result = await apiSaveProject(projectToSave);
-      if (result.success) {
-        setLastSaved(new Date());
-        console.log("[useProject] saveNow completed successfully");
-      } else {
-        console.error("[useProject] saveNow failed:", result.error);
-      }
+      setStorageMode(result.storageMode);
+      setLastSaved(new Date());
       return result.success;
     } catch (error) {
       console.error("[useProject] Error saving project:", error);
@@ -380,7 +460,7 @@ export function useProject(): UseProjectReturn {
     }
   }, []);
 
-  // Schedule auto-save - debounced to 2 seconds
+  // Schedule auto-save - 1 second debounce
   const scheduleAutoSave = useCallback(() => {
     pendingSaveRef.current = true;
     
@@ -392,7 +472,7 @@ export function useProject(): UseProjectReturn {
       if (pendingSaveRef.current) {
         saveNow();
       }
-    }, 2000);
+    }, 1000);
   }, [saveNow]);
 
   // Cleanup auto-save timeout on unmount
@@ -400,6 +480,10 @@ export function useProject(): UseProjectReturn {
     return () => {
       if (autoSaveTimeoutRef.current) {
         clearTimeout(autoSaveTimeoutRef.current);
+      }
+      // Save immediately on unmount if pending
+      if (pendingSaveRef.current && currentProjectRef.current) {
+        saveLocalProject(currentProjectRef.current);
       }
     };
   }, []);
@@ -419,6 +503,17 @@ export function useProject(): UseProjectReturn {
   const openProject = useCallback(async (id: string) => {
     setProjectLoading(true);
     
+    // Try local first for instant load
+    const localProject = getLocalProject(id);
+    if (localProject) {
+      setCurrentProject(localProject);
+      currentProjectRef.current = localProject;
+      setCurrentProjectId(id);
+      setCurrentPromptIdState(null);
+      setCurrentPromptId(null);
+    }
+    
+    // Then fetch from Azure
     const { project, storageMode: mode } = await fetchProject(id);
     
     if (project) {
@@ -426,19 +521,14 @@ export function useProject(): UseProjectReturn {
       currentProjectRef.current = project;
       setStorageMode(mode);
       setCurrentProjectId(id);
-      setCurrentPromptIdState(null);
-      setCurrentPromptId(null);
     }
     
     setProjectLoading(false);
   }, []);
 
   const closeProject = useCallback(async () => {
-    console.log("[useProject] closeProject called");
-    
-    // Save before closing if there are pending changes
-    if (currentProjectRef.current && pendingSaveRef.current) {
-      console.log("[useProject] Saving pending changes before closing");
+    // Save before closing
+    if (currentProjectRef.current) {
       await saveNow();
     }
     
@@ -448,14 +538,10 @@ export function useProject(): UseProjectReturn {
     setCurrentProjectId(null);
     setCurrentPromptId(null);
     
-    // Refresh the projects list
     await refreshProjects();
-    
-    console.log("[useProject] closeProject completed");
   }, [saveNow, refreshProjects]);
 
   const createProject = useCallback(async (name: string): Promise<Project> => {
-    console.log("[useProject] createProject callback starting for:", name);
     const { project, storageMode: mode } = await apiCreateProject(name);
     setStorageMode(mode);
     
@@ -464,14 +550,9 @@ export function useProject(): UseProjectReturn {
     currentProjectRef.current = project;
     setCurrentProjectId(project.id);
     
-    // Save immediately
-    console.log("[useProject] Triggering immediate save for new project");
-    await apiSaveProject(project);
-    
     // Refresh project list
     await refreshProjects();
     
-    console.log("[useProject] createProject completed for:", project.id);
     return project;
   }, [refreshProjects]);
 
@@ -487,24 +568,19 @@ export function useProject(): UseProjectReturn {
       setCurrentPromptId(null);
     }
     
-    // Refresh project list
     await refreshProjects();
   }, [currentProject, refreshProjects]);
 
   const renameProject = useCallback((name: string) => {
     if (!currentProject) return;
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        name,
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
-    
+    const updated = {
+      ...currentProject,
+      name,
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
   }, [currentProject, scheduleAutoSave]);
 
@@ -526,63 +602,57 @@ export function useProject(): UseProjectReturn {
   const createPrompt = useCallback((title: string): ProjectPrompt => {
     const newPrompt = createNewPrompt(title);
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        prompts: [...prev.prompts, newPrompt],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return newPrompt;
     
-    // Open the new prompt
+    const updated = {
+      ...currentProject,
+      prompts: [...currentProject.prompts, newPrompt],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
+    
     setCurrentPromptIdState(newPrompt.id);
     setCurrentPromptId(newPrompt.id);
     
     scheduleAutoSave();
     
     return newPrompt;
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const deletePrompt = useCallback((id: string) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        prompts: prev.prompts.filter((p) => p.id !== id),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
-    // If deleting current prompt, close it
+    const updated = {
+      ...currentProject,
+      prompts: currentProject.prompts.filter((p) => p.id !== id),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
+    
     if (currentPromptId === id) {
       setCurrentPromptIdState(null);
       setCurrentPromptId(null);
     }
     
     scheduleAutoSave();
-  }, [currentPromptId, scheduleAutoSave]);
+  }, [currentProject, currentPromptId, scheduleAutoSave]);
 
   const renamePrompt = useCallback((id: string, title: string) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        prompts: prev.prompts.map((p) =>
-          p.id === id ? { ...p, title, updatedAt: now() } : p
-        ),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
+    const updated = {
+      ...currentProject,
+      prompts: currentProject.prompts.map((p) =>
+        p.id === id ? { ...p, title, updatedAt: now() } : p
+      ),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const duplicatePrompt = useCallback((id: string): ProjectPrompt | null => {
     if (!currentProject) return null;
@@ -593,17 +663,13 @@ export function useProject(): UseProjectReturn {
     const duplicate = createNewPrompt(`${original.title} (Copy)`);
     duplicate.promptRequest = { ...original.promptRequest };
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        prompts: [...prev.prompts, duplicate],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
-    
+    const updated = {
+      ...currentProject,
+      prompts: [...currentProject.prompts, duplicate],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
     
     return duplicate;
@@ -614,93 +680,79 @@ export function useProject(): UseProjectReturn {
   // ============================================
 
   const updatePromptRequest = useCallback((updates: Partial<PromptRequest>) => {
-    if (!currentPromptId) return;
+    if (!currentProject || !currentPromptId) return;
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        prompts: prev.prompts.map((p) =>
-          p.id === currentPromptId
-            ? {
-                ...p,
-                promptRequest: { ...p.promptRequest, ...updates },
-                updatedAt: now(),
-              }
-            : p
-        ),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
-    
+    const updated = {
+      ...currentProject,
+      prompts: currentProject.prompts.map((p) =>
+        p.id === currentPromptId
+          ? {
+              ...p,
+              promptRequest: { ...p.promptRequest, ...updates },
+              updatedAt: now(),
+            }
+          : p
+      ),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [currentPromptId, scheduleAutoSave]);
+  }, [currentProject, currentPromptId, scheduleAutoSave]);
 
   const saveHistoryEntry = useCallback((note?: string): PromptHistoryEntry | null => {
-    const project = currentProjectRef.current;
-    if (!project || !currentPromptId) return null;
+    if (!currentProject || !currentPromptId) return null;
     
-    const prompt = project.prompts.find((p) => p.id === currentPromptId);
+    const prompt = currentProject.prompts.find((p) => p.id === currentPromptId);
     if (!prompt) return null;
     
     let entry: PromptHistoryEntry | null = null;
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        prompts: prev.prompts.map((p) => {
-          if (p.id === currentPromptId) {
-            entry = addHistoryEntry(p, note);
-            return { ...p };
-          }
-          return p;
-        }),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
-    
-    // Trigger immediate save for history
+    const updated = {
+      ...currentProject,
+      prompts: currentProject.prompts.map((p) => {
+        if (p.id === currentPromptId) {
+          const newPrompt = { ...p };
+          entry = addHistoryEntry(newPrompt, note);
+          return newPrompt;
+        }
+        return p;
+      }),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     saveNow();
     
     return entry;
-  }, [currentPromptId, saveNow]);
+  }, [currentProject, currentPromptId, saveNow]);
 
   const restoreFromHistory = useCallback((historyId: string) => {
-    const project = currentProjectRef.current;
-    if (!project || !currentPromptId) return;
+    if (!currentProject || !currentPromptId) return;
     
-    const prompt = project.prompts.find((p) => p.id === currentPromptId);
+    const prompt = currentProject.prompts.find((p) => p.id === currentPromptId);
     if (!prompt) return;
     
     const historyEntry = prompt.history.find((h) => h.id === historyId);
     if (!historyEntry) return;
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        prompts: prev.prompts.map((p) =>
-          p.id === currentPromptId
-            ? {
-                ...p,
-                promptRequest: { ...historyEntry.promptRequest },
-                updatedAt: now(),
-              }
-            : p
-        ),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
-    
+    const updated = {
+      ...currentProject,
+      prompts: currentProject.prompts.map((p) =>
+        p.id === currentPromptId
+          ? {
+              ...p,
+              promptRequest: { ...historyEntry.promptRequest },
+              updatedAt: now(),
+            }
+          : p
+      ),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [currentPromptId, scheduleAutoSave]);
+  }, [currentProject, currentPromptId, scheduleAutoSave]);
 
   // ============================================
   // CHARACTER CRUD
@@ -714,58 +766,51 @@ export function useProject(): UseProjectReturn {
       updatedAt: now(),
     };
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        characters: [...prev.characters, newChar],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return newChar;
     
+    const updated = {
+      ...currentProject,
+      characters: [...currentProject.characters, newChar],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
     return newChar;
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const updateCharacter = useCallback((id: string, updates: Partial<CharacterProfile>) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        characters: prev.characters.map((c) =>
-          c.id === id ? { ...c, ...updates, id, createdAt: c.createdAt, updatedAt: now() } : c
-        ),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
+    const updated = {
+      ...currentProject,
+      characters: currentProject.characters.map((c) =>
+        c.id === id ? { ...c, ...updates, id, createdAt: c.createdAt, updatedAt: now() } : c
+      ),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const deleteCharacter = useCallback((id: string) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        characters: prev.characters.filter((c) => c.id !== id),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
+    const updated = {
+      ...currentProject,
+      characters: currentProject.characters.filter((c) => c.id !== id),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const duplicateCharacter = useCallback((id: string): CharacterProfile | null => {
-    const project = currentProjectRef.current;
-    if (!project) return null;
+    if (!currentProject) return null;
     
-    const original = project.characters.find((c) => c.id === id);
+    const original = currentProject.characters.find((c) => c.id === id);
     if (!original) return null;
     
     const duplicate: CharacterProfile = {
@@ -776,20 +821,16 @@ export function useProject(): UseProjectReturn {
       updatedAt: now(),
     };
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        characters: [...prev.characters, duplicate],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
-    
+    const updated = {
+      ...currentProject,
+      characters: [...currentProject.characters, duplicate],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
     return duplicate;
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   // ============================================
   // WARDROBE CRUD
@@ -803,58 +844,51 @@ export function useProject(): UseProjectReturn {
       updatedAt: now(),
     };
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        wardrobes: [...prev.wardrobes, newWardrobe],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return newWardrobe;
     
+    const updated = {
+      ...currentProject,
+      wardrobes: [...currentProject.wardrobes, newWardrobe],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
     return newWardrobe;
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const updateWardrobe = useCallback((id: string, updates: Partial<WardrobeProfile>) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        wardrobes: prev.wardrobes.map((w) =>
-          w.id === id ? { ...w, ...updates, id, createdAt: w.createdAt, updatedAt: now() } : w
-        ),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
+    const updated = {
+      ...currentProject,
+      wardrobes: currentProject.wardrobes.map((w) =>
+        w.id === id ? { ...w, ...updates, id, createdAt: w.createdAt, updatedAt: now() } : w
+      ),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const deleteWardrobe = useCallback((id: string) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        wardrobes: prev.wardrobes.filter((w) => w.id !== id),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
+    const updated = {
+      ...currentProject,
+      wardrobes: currentProject.wardrobes.filter((w) => w.id !== id),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const duplicateWardrobe = useCallback((id: string): WardrobeProfile | null => {
-    const project = currentProjectRef.current;
-    if (!project) return null;
+    if (!currentProject) return null;
     
-    const original = project.wardrobes.find((w) => w.id === id);
+    const original = currentProject.wardrobes.find((w) => w.id === id);
     if (!original) return null;
     
     const duplicate: WardrobeProfile = {
@@ -865,20 +899,16 @@ export function useProject(): UseProjectReturn {
       updatedAt: now(),
     };
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        wardrobes: [...prev.wardrobes, duplicate],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
-    
+    const updated = {
+      ...currentProject,
+      wardrobes: [...currentProject.wardrobes, duplicate],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
     return duplicate;
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   // ============================================
   // LENS CRUD
@@ -892,58 +922,51 @@ export function useProject(): UseProjectReturn {
       updatedAt: now(),
     };
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        lenses: [...prev.lenses, newLens],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return newLens;
     
+    const updated = {
+      ...currentProject,
+      lenses: [...currentProject.lenses, newLens],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
     return newLens;
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const updateLens = useCallback((id: string, updates: Partial<LensProfile>) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        lenses: prev.lenses.map((l) =>
-          l.id === id ? { ...l, ...updates, id, createdAt: l.createdAt, updatedAt: now() } : l
-        ),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
+    const updated = {
+      ...currentProject,
+      lenses: currentProject.lenses.map((l) =>
+        l.id === id ? { ...l, ...updates, id, createdAt: l.createdAt, updatedAt: now() } : l
+      ),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const deleteLens = useCallback((id: string) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        lenses: prev.lenses.filter((l) => l.id !== id),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
+    const updated = {
+      ...currentProject,
+      lenses: currentProject.lenses.filter((l) => l.id !== id),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const duplicateLens = useCallback((id: string): LensProfile | null => {
-    const project = currentProjectRef.current;
-    if (!project) return null;
+    if (!currentProject) return null;
     
-    const original = project.lenses.find((l) => l.id === id);
+    const original = currentProject.lenses.find((l) => l.id === id);
     if (!original) return null;
     
     const duplicate: LensProfile = {
@@ -954,20 +977,16 @@ export function useProject(): UseProjectReturn {
       updatedAt: now(),
     };
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        lenses: [...prev.lenses, duplicate],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
-    
+    const updated = {
+      ...currentProject,
+      lenses: [...currentProject.lenses, duplicate],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
     return duplicate;
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   // ============================================
   // LOOK CRUD
@@ -981,58 +1000,51 @@ export function useProject(): UseProjectReturn {
       updatedAt: now(),
     };
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        looks: [...prev.looks, newLook],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return newLook;
     
+    const updated = {
+      ...currentProject,
+      looks: [...currentProject.looks, newLook],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
     return newLook;
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const updateLook = useCallback((id: string, updates: Partial<LookFamily>) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        looks: prev.looks.map((l) =>
-          l.id === id ? { ...l, ...updates, id, createdAt: l.createdAt, updatedAt: now() } : l
-        ),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
+    const updated = {
+      ...currentProject,
+      looks: currentProject.looks.map((l) =>
+        l.id === id ? { ...l, ...updates, id, createdAt: l.createdAt, updatedAt: now() } : l
+      ),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const deleteLook = useCallback((id: string) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        looks: prev.looks.filter((l) => l.id !== id),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
+    const updated = {
+      ...currentProject,
+      looks: currentProject.looks.filter((l) => l.id !== id),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const duplicateLook = useCallback((id: string): LookFamily | null => {
-    const project = currentProjectRef.current;
-    if (!project) return null;
+    if (!currentProject) return null;
     
-    const original = project.looks.find((l) => l.id === id);
+    const original = currentProject.looks.find((l) => l.id === id);
     if (!original) return null;
     
     const duplicate: LookFamily = {
@@ -1043,20 +1055,16 @@ export function useProject(): UseProjectReturn {
       updatedAt: now(),
     };
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        looks: [...prev.looks, duplicate],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
-    
+    const updated = {
+      ...currentProject,
+      looks: [...currentProject.looks, duplicate],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
     return duplicate;
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   // ============================================
   // MICRO TEXTURE CRUD
@@ -1070,58 +1078,51 @@ export function useProject(): UseProjectReturn {
       updatedAt: now(),
     };
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        microTextures: [...prev.microTextures, newPack],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return newPack;
     
+    const updated = {
+      ...currentProject,
+      microTextures: [...currentProject.microTextures, newPack],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
     return newPack;
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const updateMicroTexture = useCallback((id: string, updates: Partial<MicroTexturePack>) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        microTextures: prev.microTextures.map((m) =>
-          m.id === id ? { ...m, ...updates, id, createdAt: m.createdAt, updatedAt: now() } : m
-        ),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
+    const updated = {
+      ...currentProject,
+      microTextures: currentProject.microTextures.map((m) =>
+        m.id === id ? { ...m, ...updates, id, createdAt: m.createdAt, updatedAt: now() } : m
+      ),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const deleteMicroTexture = useCallback((id: string) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        microTextures: prev.microTextures.filter((m) => m.id !== id),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
+    const updated = {
+      ...currentProject,
+      microTextures: currentProject.microTextures.filter((m) => m.id !== id),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const duplicateMicroTexture = useCallback((id: string): MicroTexturePack | null => {
-    const project = currentProjectRef.current;
-    if (!project) return null;
+    if (!currentProject) return null;
     
-    const original = project.microTextures.find((m) => m.id === id);
+    const original = currentProject.microTextures.find((m) => m.id === id);
     if (!original) return null;
     
     const duplicate: MicroTexturePack = {
@@ -1132,20 +1133,16 @@ export function useProject(): UseProjectReturn {
       updatedAt: now(),
     };
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        microTextures: [...prev.microTextures, duplicate],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
-    
+    const updated = {
+      ...currentProject,
+      microTextures: [...currentProject.microTextures, duplicate],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
     return duplicate;
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   // ============================================
   // MICRO DETAIL CRUD
@@ -1159,58 +1156,51 @@ export function useProject(): UseProjectReturn {
       updatedAt: now(),
     };
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        microDetails: [...prev.microDetails, newPack],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return newPack;
     
+    const updated = {
+      ...currentProject,
+      microDetails: [...currentProject.microDetails, newPack],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
     return newPack;
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const updateMicroDetail = useCallback((id: string, updates: Partial<MicroDetailPack>) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        microDetails: prev.microDetails.map((m) =>
-          m.id === id ? { ...m, ...updates, id, createdAt: m.createdAt, updatedAt: now() } : m
-        ),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
+    const updated = {
+      ...currentProject,
+      microDetails: currentProject.microDetails.map((m) =>
+        m.id === id ? { ...m, ...updates, id, createdAt: m.createdAt, updatedAt: now() } : m
+      ),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const deleteMicroDetail = useCallback((id: string) => {
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        microDetails: prev.microDetails.filter((m) => m.id !== id),
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
+    if (!currentProject) return;
     
+    const updated = {
+      ...currentProject,
+      microDetails: currentProject.microDetails.filter((m) => m.id !== id),
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   const duplicateMicroDetail = useCallback((id: string): MicroDetailPack | null => {
-    const project = currentProjectRef.current;
-    if (!project) return null;
+    if (!currentProject) return null;
     
-    const original = project.microDetails.find((m) => m.id === id);
+    const original = currentProject.microDetails.find((m) => m.id === id);
     if (!original) return null;
     
     const duplicate: MicroDetailPack = {
@@ -1221,20 +1211,16 @@ export function useProject(): UseProjectReturn {
       updatedAt: now(),
     };
     
-    setCurrentProject((prev) => {
-      if (!prev) return prev;
-      const updated = {
-        ...prev,
-        microDetails: [...prev.microDetails, duplicate],
-        updatedAt: now(),
-      };
-      currentProjectRef.current = updated;
-      return updated;
-    });
-    
+    const updated = {
+      ...currentProject,
+      microDetails: [...currentProject.microDetails, duplicate],
+      updatedAt: now(),
+    };
+    setCurrentProject(updated);
+    currentProjectRef.current = updated;
     scheduleAutoSave();
     return duplicate;
-  }, [scheduleAutoSave]);
+  }, [currentProject, scheduleAutoSave]);
 
   return {
     // Project list

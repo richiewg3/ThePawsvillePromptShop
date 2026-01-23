@@ -6,7 +6,9 @@ import {
   FocusTargetSuggestions,
   MicroDetailSuggestions,
   QASuggestions,
+  SceneHeartUpgrade,
   PromptRequest,
+  Framing,
 } from "./schemas";
 
 interface AIResult<T> {
@@ -68,4 +70,21 @@ export async function runQACheck(
   promptRequest: Partial<PromptRequest>
 ): Promise<AIResult<QASuggestions>> {
   return callAI("/api/ai/qa", { promptRequest });
+}
+
+export interface UpgradeSceneHeartParams {
+  sceneHeart: string;
+  castSummaries?: string[];
+  framing?: Framing;
+  mechanicLock?: string | null;
+  focusTarget?: string | null;
+  existingAnchors?: string[];
+  lookFamilyName?: string | null;
+  lensMode?: "auto" | "manual" | null;
+}
+
+export async function upgradeSceneHeart(
+  params: UpgradeSceneHeartParams
+): Promise<AIResult<SceneHeartUpgrade>> {
+  return callAI("/api/ai/upgrade-scene-heart", params);
 }

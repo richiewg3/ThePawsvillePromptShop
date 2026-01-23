@@ -19,6 +19,7 @@ import { ValidationPanel } from "@/components/validation-panel";
 import { PromptPreview } from "@/components/prompt-preview";
 import { LookInfoPopover } from "@/components/look-info-popover";
 import { AISuggestionModal, AnchorSuggestionModal } from "@/components/ai-suggestion-modal";
+import { SceneHeartUpgradeModal } from "@/components/scene-heart-upgrade-modal";
 import { ProjectsList } from "@/components/projects-list";
 import { PromptsList } from "@/components/prompts-list";
 import { PromptHistory } from "@/components/prompt-history";
@@ -28,7 +29,9 @@ import {
   suggestMechanicLock,
   suggestFocusTarget,
   runQACheck,
+  upgradeSceneHeart,
 } from "@/lib/ai-client";
+import { SceneHeartUpgrade } from "@/lib/schemas";
 
 const ASPECT_RATIO_OPTIONS: { value: AspectRatio; label: string }[] = [
   { value: "1x1", label: "1:1 Square" },
@@ -102,6 +105,12 @@ export default function PromptComposerPage() {
 
   const [qaLoading, setQaLoading] = useState(false);
   const [qaResults, setQaResults] = useState<{ warnings: string[]; suggestedFixes: string[] } | null>(null);
+
+  // Scene Heart Upgrade state
+  const [upgradeModalOpen, setUpgradeModalOpen] = useState(false);
+  const [upgradeLoading, setUpgradeLoading] = useState(false);
+  const [upgradeError, setUpgradeError] = useState<string | null>(null);
+  const [upgradeData, setUpgradeData] = useState<SceneHeartUpgrade | null>(null);
 
   // Mobile sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -326,6 +335,63 @@ export default function PromptComposerPage() {
     }
   };
 
+  // Scene Heart Upgrade handler
+  const handleUpgradeSceneHeart = async () => {
+    if (!sceneHeart.trim() || sceneHeart.trim().length < 20) {
+      alert("Scene Heart must be at least 20 characters to upgrade");
+      return;
+    }
+    
+    setUpgradeLoading(true);
+    setUpgradeError(null);
+    setUpgradeData(null);
+    setUpgradeModalOpen(true);
+    
+    // Build cast summaries from selected cast
+    const castSummaries = cast.map(c => {
+      const char = characters.find(ch => ch.id === c.characterId);
+      return char?.uiName || "";
+    }).filter(Boolean);
+    
+    // Get look name if selected
+    const lookName = looks.find(l => l.id === lookFamilyId)?.uiName || null;
+    
+    const result = await upgradeSceneHeart({
+      sceneHeart,
+      castSummaries,
+      framing,
+      mechanicLock: mechanicLock || null,
+      focusTarget: focusTarget || null,
+      existingAnchors: environmentAnchors.filter(a => a.trim()),
+      lookFamilyName: lookName,
+      lensMode,
+    });
+    
+    setUpgradeLoading(false);
+    
+    if (result.ok && result.data) {
+      setUpgradeData(result.data);
+    } else {
+      setUpgradeError(result.error?.message || "Failed to upgrade Scene Heart");
+    }
+  };
+
+  const handleApplyUpgrade = (selectedVersion: string, selectedAnchors: string[]) => {
+    // Save history before applying
+    saveHistoryEntry("Before AI upgrade");
+    
+    // Apply the selected version
+    setSceneHeart(selectedVersion);
+    
+    // Apply the selected anchors (pad to 5 slots)
+    const newAnchors = [...selectedAnchors];
+    while (newAnchors.length < 5) newAnchors.push("");
+    setEnvironmentAnchors(newAnchors.slice(0, 5));
+    
+    // Close modal
+    setUpgradeModalOpen(false);
+  };
+
   // ============================================
   // RENDER: Projects List (no project open)
   // ============================================
@@ -524,6 +590,31 @@ export default function PromptComposerPage() {
                     value={sceneHeart}
                     onChange={(e) => setSceneHeart(e.target.value)}
                   />
+                  <div className="mt-3 flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleUpgradeSceneHeart}
+                      disabled={!sceneHeart.trim() || sceneHeart.trim().length < 20 || upgradeLoading}
+                      className="btn btn-outline flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {upgradeLoading ? (
+                        <>
+                          <span className="animate-spin">⏳</span>
+                          Upgrading…
+                        </>
+                      ) : (
+                        <>
+                          <span>✨</span>
+                          Upgrade Heart
+                        </>
+                      )}
+                    </button>
+                    {sceneHeart.trim() && sceneHeart.trim().length < 20 && (
+                      <span className="text-xs text-canvas-500">
+                        (need {20 - sceneHeart.trim().length} more chars to upgrade)
+                      </span>
+                    )}
+                  </div>
                 </div>
 
                 {/* Cast + Wardrobe */}
@@ -783,6 +874,16 @@ export default function PromptComposerPage() {
         onAccept={(item) => setFocusTarget(item)}
         isLoading={focusLoading}
         error={focusError}
+      />
+
+      <SceneHeartUpgradeModal
+        isOpen={upgradeModalOpen}
+        onClose={() => setUpgradeModalOpen(false)}
+        upgradeData={upgradeData}
+        isLoading={upgradeLoading}
+        error={upgradeError}
+        onRetry={handleUpgradeSceneHeart}
+        onApply={handleApplyUpgrade}
       />
     </div>
   );

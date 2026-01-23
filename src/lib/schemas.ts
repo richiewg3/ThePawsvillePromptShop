@@ -288,9 +288,21 @@ export const QASuggestionsSchema = z.object({
   suggestedFixes: z.array(z.string()),
 });
 
+// Scene Heart Upgrade response - contains 3 rewritten versions + anchor suggestions
+export const SceneHeartUpgradeSchema = z.object({
+  versions: z.object({
+    clean: z.string(),
+    cinematic: z.string(),
+    precise: z.string(),
+  }),
+  anchorCandidates: z.array(z.string()).min(8).max(12),
+  recommendedAnchors: z.array(z.string()).min(3).max(5),
+});
+
 export type AIResponse = z.infer<typeof AIResponseSchema>;
 export type AnchorSuggestions = z.infer<typeof AnchorSuggestionsSchema>;
 export type MechanicLockSuggestions = z.infer<typeof MechanicLockSuggestionsSchema>;
 export type FocusTargetSuggestions = z.infer<typeof FocusTargetSuggestionsSchema>;
 export type MicroDetailSuggestions = z.infer<typeof MicroDetailSuggestionsSchema>;
 export type QASuggestions = z.infer<typeof QASuggestionsSchema>;
+export type SceneHeartUpgrade = z.infer<typeof SceneHeartUpgradeSchema>;

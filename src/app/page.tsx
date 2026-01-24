@@ -77,6 +77,8 @@ export default function PromptComposerPage() {
     // ALL data comes from the project (saved to Azure)
     characters,
     wardrobes,
+    environmentPresets,
+    activeEnvironmentPresetId,
     looks,
     lenses,
     microTextures,
@@ -204,16 +206,18 @@ export default function PromptComposerPage() {
   // Compilation
   const compiledResult = useMemo(() => {
     if (!canCompile) return null;
+    const activeEnvironmentLock = environmentPresets.find((preset) => preset.id === activeEnvironmentPresetId) || null;
     const context: CompilerContext = {
       characters,
       wardrobes,
+      environmentLock: activeEnvironmentLock,
       looks,
       lenses,
       microTextures,
       microDetails,
     };
     return compilePrompt(fullPromptRequest as PromptRequest, context);
-  }, [canCompile, fullPromptRequest, characters, wardrobes, looks, lenses, microTextures, microDetails]);
+  }, [canCompile, fullPromptRequest, characters, wardrobes, environmentPresets, activeEnvironmentPresetId, looks, lenses, microTextures, microDetails]);
 
   // Selected look for info display
   const selectedLook = looks.find((l) => l.id === lookFamilyId) || null;

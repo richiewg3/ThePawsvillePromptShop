@@ -7,6 +7,7 @@ import {
   MicroTexturePack,
   MicroDetailPack,
   Framing,
+  EnvironmentPreset,
 } from "./schemas";
 import { FRAMING_COMPOSITIONS } from "@/data/defaults";
 
@@ -21,6 +22,7 @@ export interface CompilerContext {
   lenses: LensProfile[];
   microTextures: MicroTexturePack[];
   microDetails: MicroDetailPack[];
+  environmentLock?: EnvironmentPreset | null;
 }
 
 export interface CompiledPrompt {
@@ -97,6 +99,27 @@ function generateSeedSummary(
   return `[${request.aspectRatio}] ${characterNames} | ${framingLabel} | ${resolvedLens.focalLengthMm}mm | ${look?.uiName || "Unknown Look"}`;
 }
 
+function buildEnvironmentLockBlock(preset: EnvironmentPreset, options?: { includeHeader?: boolean }): string {
+  const anchorLines = preset.stageAnchors.map((anchor) => {
+    return `- ${anchor.name} (${anchor.position}) — ${anchor.materialTexture}; ${anchor.uniqueDetail}`;
+  });
+  const constraints = preset.doNotChangeConstraints.filter((item) => item.trim());
+  const includeHeader = options?.includeHeader ?? true;
+
+  const lines = [
+    includeHeader ? `ENVIRONMENT LOCK (${preset.uiName}):` : `Name: ${preset.uiName}`,
+    `Scene Description:\n${preset.sceneDescription}`,
+    `Stage Anchors:\n${anchorLines.join("\n")}`,
+    `Spatial Layout Notes:\n${preset.spatialLayoutNotes}`,
+    `Lighting Notes:\n${preset.lightingNotes}`,
+    `Color Palette / Grade Notes:\n${preset.colorPaletteNotes}`,
+    `Camera / View Notes:\n${preset.cameraViewNotes}`,
+    constraints.length > 0 ? `Do Not Change Constraints:\n${constraints.map((c) => `- ${c}`).join("\n")}` : "Do Not Change Constraints:\n- (none)",
+  ];
+
+  return lines.join("\n");
+}
+
 // ============================================
 // COMPACT OUTPUT COMPILER
 // ============================================
@@ -142,22 +165,27 @@ export function compileCompact(
   const anchors = request.environmentAnchors.filter((a) => a.trim());
   sections.push(`ENVIRONMENT ANCHORS:\n${anchors.map((a) => `- ${a}`).join("\n")}`);
 
-  // 6. Composition/Staging
+  // 6. Environment Lock (optional)
+  if (context.environmentLock) {
+    sections.push(buildEnvironmentLockBlock(context.environmentLock, { includeHeader: true }));
+  }
+
+  // 7. Composition/Staging
   const compositionText = FRAMING_COMPOSITIONS[request.framing] || "";
   sections.push(`COMPOSITION/STAGING:\n${compositionText}`);
 
-  // 7. Camera/Optics
+  // 8. Camera/Optics
   const lensSource = resolvedLensResult.source === "auto" ? " (Auto via Look Default)" : " (Manual)";
   sections.push(
     `CAMERA/OPTICS${lensSource}: ${resolvedLensResult.profile.focalLengthMm}mm\n${resolvedLensResult.profile.injectedText}`
   );
 
-  // 8. Look (Lighting + Color Grade + Finish)
+  // 9. Look (Lighting + Color Grade + Finish)
   if (look) {
     sections.push(`LOOK (${look.uiName}):\n${look.injectedText}`);
   }
 
-  // 9. Micro-textures
+  // 10. Micro-textures
   const selectedTextures = context.microTextures.filter((t) =>
     request.selectedMicroTextures.includes(t.id)
   );
@@ -166,7 +194,7 @@ export function compileCompact(
     sections.push(`MICRO-TEXTURES:\n${textureItems.map((i) => `- ${i}`).join("\n")}`);
   }
 
-  // 10. Micro-details
+  // 11. Micro-details
   const selectedDetails = context.microDetails.filter((d) =>
     request.selectedMicroDetails.includes(d.id)
   );
@@ -175,7 +203,7 @@ export function compileCompact(
     sections.push(`MICRO-DETAILS:\n${detailItems.map((i) => `- ${i}`).join("\n")}`);
   }
 
-  // 11. Output Specs
+  // 12. Output Specs
   const cropRule =
     request.framing === "full_body"
       ? "NO CROPPING - hands and feet must be fully visible"
@@ -186,7 +214,7 @@ export function compileCompact(
     `OUTPUT SPECS:\nAspect Ratio: ${request.aspectRatio}${cropRule ? `\nCrop Rule: ${cropRule}` : ""}`
   );
 
-  // 12. Seed Summary
+  // 13. Seed Summary
   const seedSummary = generateSeedSummary(request, context, resolvedLensResult.profile);
   sections.push(`SEED SUMMARY:\n${seedSummary}`);
 
@@ -237,19 +265,24 @@ export function compileExpanded(
     `== COMPOSITION / STAGING ==\n${compositionText}\n\nEnvironment Anchors:\n${anchors.map((a) => `- ${a}`).join("\n")}`
   );
 
-  // 5. Camera & Optics
+  // 5. Environment Lock (optional)
+  if (context.environmentLock) {
+    sections.push(`== ENVIRONMENT LOCK ==\n${buildEnvironmentLockBlock(context.environmentLock, { includeHeader: false })}`);
+  }
+
+  // 6. Camera & Optics
   const lensSource = resolvedLensResult.source === "auto" ? " (Auto via Look Default)" : " (Manual)";
   sections.push(
     `== CAMERA & OPTICS ==${lensSource}\nFocal Length: ${resolvedLensResult.profile.focalLengthMm}mm\n${resolvedLensResult.profile.injectedText}`
   );
 
-  // 6. Lighting (from Look)
+  // 7. Lighting (from Look)
   if (look) {
     // Extract lighting portion - in our schema it's combined, so we use the full text
     sections.push(`== LIGHTING ==\n${look.injectedText}`);
   }
 
-  // 7. Art Direction / Style (Finish) - using look's finish portion
+  // 8. Art Direction / Style (Finish) - using look's finish portion
   // Since our injectedText combines all, we reference the look's summary
   if (look) {
     sections.push(
@@ -257,11 +290,11 @@ export function compileExpanded(
     );
   }
 
-  // 8. Color Grade - referenced as part of look
+  // 9. Color Grade - referenced as part of look
   // Placeholder since our schema combines these
   sections.push(`== COLOR GRADE ==\nApplied via Look: ${look?.uiName || "None selected"}`);
 
-  // 9. Locks (paired identity+wardrobe per character)
+  // 10. Locks (paired identity+wardrobe per character)
   const lockLines: string[] = [];
   request.cast.forEach((member, idx) => {
     const character = context.characters.find((c) => c.id === member.characterId);
@@ -284,13 +317,13 @@ export function compileExpanded(
   });
   sections.push(`== CHARACTER LOCKS ==\n${lockLines.join("\n")}`);
 
-  // 10. Mechanic Lock
+  // 11. Mechanic Lock
   sections.push(`== MECHANIC LOCK ==\n${request.mechanicLock}`);
 
-  // 11. Focus Target
+  // 12. Focus Target
   sections.push(`== FOCUS TARGET ==\n${request.focusTarget}`);
 
-  // 12. Output Quality Specs
+  // 13. Output Quality Specs
   const cropRule =
     request.framing === "full_body"
       ? "NO CROPPING - hands and feet must be fully visible"
@@ -301,7 +334,7 @@ export function compileExpanded(
     `== OUTPUT QUALITY SPECS ==\nAspect Ratio: ${request.aspectRatio}\nFraming: ${request.framing.replace("_", " ")}${cropRule ? `\nCrop Rule: ${cropRule}` : ""}`
   );
 
-  // 13. Seed Summary
+  // 14. Seed Summary
   const seedSummary = generateSeedSummary(request, context, resolvedLensResult.profile);
   sections.push(`== SEED SUMMARY ==\n${seedSummary}`);
 

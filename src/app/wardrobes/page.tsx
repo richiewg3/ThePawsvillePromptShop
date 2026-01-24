@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { WardrobeProfile } from "@/lib/schemas";
 import { useProject } from "@/hooks/useProject";
+import { useGlobalLibrary } from "@/hooks/useGlobalLibrary";
 import { ManagerCard, ManagerHeader, EmptyState } from "@/components/manager-card";
 import { Modal, ModalFooter } from "@/components/modal";
 
@@ -30,6 +31,11 @@ export default function WardrobesPage() {
     storageMode,
     isSaving,
   } = useProject();
+  const {
+    globalWardrobes,
+    addGlobalWardrobe,
+    updateGlobalWardrobe,
+  } = useGlobalLibrary();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -143,12 +149,49 @@ export default function WardrobesPage() {
               onDuplicate={() => handleDuplicate(wardrobe.id)}
               onDelete={() => handleDelete(wardrobe.id)}
             >
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-xs px-2 py-0.5 rounded-full bg-canvas-100 text-canvas-600">PROJECT</span>
+              </div>
               <p className="line-clamp-3">{wardrobe.outfitText}</p>
               {wardrobe.bansText && (
                 <p className="mt-2 text-xs text-red-600 bg-red-50 px-2 py-1 rounded">
                   Bans: {wardrobe.bansText}
                 </p>
               )}
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="btn btn-secondary text-xs"
+                  onClick={() =>
+                    addGlobalWardrobe({
+                      uiName: wardrobe.uiName,
+                      outfitText: wardrobe.outfitText,
+                      bansText: wardrobe.bansText,
+                    })
+                  }
+                >
+                  Save to Global Library
+                </button>
+                {globalWardrobes.find((entry) => entry.uiName === wardrobe.uiName) && (
+                  <button
+                    type="button"
+                    className="btn btn-primary text-xs"
+                    onClick={() => {
+                      const match = globalWardrobes.find((entry) => entry.uiName === wardrobe.uiName);
+                      if (!match) return;
+                      if (confirm(`Update the global entry for "${match.uiName}"?`)) {
+                        updateGlobalWardrobe(match.id, {
+                          uiName: wardrobe.uiName,
+                          outfitText: wardrobe.outfitText,
+                          bansText: wardrobe.bansText,
+                        });
+                      }
+                    }}
+                  >
+                    Update Global Entry
+                  </button>
+                )}
+              </div>
             </ManagerCard>
           ))}
         </div>

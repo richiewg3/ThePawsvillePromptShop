@@ -8,9 +8,12 @@ const navItems = [
   { href: "/", label: "Prompt Composer", icon: "✨" },
   { href: "/characters", label: "Characters", icon: "🦊" },
   { href: "/wardrobes", label: "Wardrobes", icon: "👔" },
+  { href: "/environment-locks", label: "Environment Lock", icon: "🌿" },
+  { href: "/global-library", label: "Global Library", icon: "🌐" },
   { href: "/looks", label: "Looks", icon: "🎨" },
   { href: "/lenses", label: "Lenses", icon: "📷" },
   { href: "/micro-packs", label: "Micro Packs", icon: "🔬" },
+  { href: "/tools", label: "Tools", icon: "🧰" },
 ];
 
 export default function Navigation() {

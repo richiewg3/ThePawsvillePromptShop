@@ -10,6 +10,7 @@ import {
   MicroTexturePack,
   MicroDetailPack,
   PromptRequest,
+  EnvironmentPreset,
 } from "./schemas";
 import {
   defaultLookFamilies,
@@ -90,6 +91,8 @@ export interface Project {
   // ALL project data - saved to Azure
   characters: CharacterProfile[];
   wardrobes: WardrobeProfile[];
+  environmentPresets: EnvironmentPreset[];
+  activeEnvironmentPresetId: string | null;
   lenses: LensProfile[];
   looks: LookFamily[];
   microTextures: MicroTexturePack[];
@@ -190,6 +193,8 @@ export async function getProject(projectId: string): Promise<Project | null> {
       ...project,
       characters: project.characters || [],
       wardrobes: project.wardrobes || [],
+      environmentPresets: project.environmentPresets || [],
+      activeEnvironmentPresetId: project.activeEnvironmentPresetId || null,
       lenses: project.lenses || defaultLensProfiles,
       looks: project.looks || defaultLookFamilies,
       microTextures: project.microTextures || defaultMicroTexturePacks,
@@ -291,6 +296,8 @@ export function createNewProject(name: string): Project {
     // Empty - user creates these
     characters: [],
     wardrobes: [],
+    environmentPresets: [],
+    activeEnvironmentPresetId: null,
     // Pre-seeded with defaults
     lenses: defaultLensProfiles.map(l => ({ ...l, id: crypto.randomUUID() })),
     looks: defaultLookFamilies.map(l => ({ ...l, id: crypto.randomUUID() })),

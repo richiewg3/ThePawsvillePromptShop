@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { CharacterProfile } from "@/lib/schemas";
 import { useProject } from "@/hooks/useProject";
+import { useGlobalLibrary } from "@/hooks/useGlobalLibrary";
 import { ManagerCard, ManagerHeader, EmptyState } from "@/components/manager-card";
 import { Modal, ModalFooter } from "@/components/modal";
 
@@ -39,6 +40,11 @@ export default function CharactersPage() {
     storageMode,
     isSaving,
   } = useProject();
+  const {
+    globalCharacters,
+    addGlobalCharacter,
+    updateGlobalCharacter,
+  } = useGlobalLibrary();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -170,7 +176,44 @@ export default function CharactersPage() {
               onDuplicate={() => handleDuplicate(character.id)}
               onDelete={() => handleDelete(character.id)}
             >
+              <div className="mb-2 flex items-center gap-2">
+                <span className="text-xs px-2 py-0.5 rounded-full bg-canvas-100 text-canvas-600">PROJECT</span>
+              </div>
               <p className="line-clamp-3">{character.injectedText}</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  className="btn btn-secondary text-xs"
+                  onClick={() =>
+                    addGlobalCharacter({
+                      uiName: character.uiName,
+                      injectedText: character.injectedText,
+                      helperFields: character.helperFields,
+                    })
+                  }
+                >
+                  Save to Global Library
+                </button>
+                {globalCharacters.find((entry) => entry.uiName === character.uiName) && (
+                  <button
+                    type="button"
+                    className="btn btn-primary text-xs"
+                    onClick={() => {
+                      const match = globalCharacters.find((entry) => entry.uiName === character.uiName);
+                      if (!match) return;
+                      if (confirm(`Update the global entry for "${match.uiName}"?`)) {
+                        updateGlobalCharacter(match.id, {
+                          uiName: character.uiName,
+                          injectedText: character.injectedText,
+                          helperFields: character.helperFields,
+                        });
+                      }
+                    }}
+                  >
+                    Update Global Entry
+                  </button>
+                )}
+              </div>
             </ManagerCard>
           ))}
         </div>

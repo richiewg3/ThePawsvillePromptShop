@@ -18,6 +18,7 @@ import {
   LookFamily,
   MicroTexturePack,
   MicroDetailPack,
+  EnvironmentPreset,
 } from "@/lib/schemas";
 
 // ============================================
@@ -231,6 +232,15 @@ export interface UseProjectReturn {
   updateWardrobe: (id: string, updates: Partial<WardrobeProfile>) => void;
   deleteWardrobe: (id: string) => void;
   duplicateWardrobe: (id: string) => WardrobeProfile | null;
+
+  // ENVIRONMENT LOCK CRUD - saved to project/Azure
+  environmentPresets: EnvironmentPreset[];
+  activeEnvironmentPresetId: string | null;
+  addEnvironmentPreset: (data: Omit<EnvironmentPreset, "id" | "createdAt" | "updatedAt">) => EnvironmentPreset;
+  updateEnvironmentPreset: (id: string, updates: Partial<EnvironmentPreset>) => void;
+  deleteEnvironmentPreset: (id: string) => void;
+  duplicateEnvironmentPreset: (id: string) => EnvironmentPreset | null;
+  setActiveEnvironmentPreset: (id: string | null) => void;
   
   // LENS CRUD - saved to project/Azure
   lenses: LensProfile[];
@@ -299,6 +309,8 @@ export function useProject(): UseProjectReturn {
   // Get data arrays from current project
   const characters = currentProject?.characters || [];
   const wardrobes = currentProject?.wardrobes || [];
+  const environmentPresets = currentProject?.environmentPresets || [];
+  const activeEnvironmentPresetId = currentProject?.activeEnvironmentPresetId || null;
   const lenses = currentProject?.lenses || [];
   const looks = currentProject?.looks || [];
   const microTextures = currentProject?.microTextures || [];
@@ -881,6 +893,111 @@ export function useProject(): UseProjectReturn {
   }, [scheduleAutoSave]);
 
   // ============================================
+  // ENVIRONMENT LOCK CRUD
+  // ============================================
+
+  const addEnvironmentPreset = useCallback((data: Omit<EnvironmentPreset, "id" | "createdAt" | "updatedAt">): EnvironmentPreset => {
+    const newPreset: EnvironmentPreset = {
+      ...data,
+      id: generateId(),
+      createdAt: now(),
+      updatedAt: now(),
+    };
+
+    setCurrentProject((prev) => {
+      if (!prev) return prev;
+      const updated = {
+        ...prev,
+        environmentPresets: [...prev.environmentPresets, newPreset],
+        updatedAt: now(),
+      };
+      currentProjectRef.current = updated;
+      return updated;
+    });
+
+    scheduleAutoSave();
+    return newPreset;
+  }, [scheduleAutoSave]);
+
+  const updateEnvironmentPreset = useCallback((id: string, updates: Partial<EnvironmentPreset>) => {
+    setCurrentProject((prev) => {
+      if (!prev) return prev;
+      const updated = {
+        ...prev,
+        environmentPresets: prev.environmentPresets.map((preset) =>
+          preset.id === id ? { ...preset, ...updates, id, createdAt: preset.createdAt, updatedAt: now() } : preset
+        ),
+        updatedAt: now(),
+      };
+      currentProjectRef.current = updated;
+      return updated;
+    });
+
+    scheduleAutoSave();
+  }, [scheduleAutoSave]);
+
+  const deleteEnvironmentPreset = useCallback((id: string) => {
+    setCurrentProject((prev) => {
+      if (!prev) return prev;
+      const updated = {
+        ...prev,
+        environmentPresets: prev.environmentPresets.filter((preset) => preset.id !== id),
+        activeEnvironmentPresetId: prev.activeEnvironmentPresetId === id ? null : prev.activeEnvironmentPresetId,
+        updatedAt: now(),
+      };
+      currentProjectRef.current = updated;
+      return updated;
+    });
+
+    scheduleAutoSave();
+  }, [scheduleAutoSave]);
+
+  const duplicateEnvironmentPreset = useCallback((id: string): EnvironmentPreset | null => {
+    const project = currentProjectRef.current;
+    if (!project) return null;
+
+    const original = project.environmentPresets.find((preset) => preset.id === id);
+    if (!original) return null;
+
+    const duplicate: EnvironmentPreset = {
+      ...original,
+      id: generateId(),
+      uiName: `${original.uiName} (Copy)`,
+      createdAt: now(),
+      updatedAt: now(),
+    };
+
+    setCurrentProject((prev) => {
+      if (!prev) return prev;
+      const updated = {
+        ...prev,
+        environmentPresets: [...prev.environmentPresets, duplicate],
+        updatedAt: now(),
+      };
+      currentProjectRef.current = updated;
+      return updated;
+    });
+
+    scheduleAutoSave();
+    return duplicate;
+  }, [scheduleAutoSave]);
+
+  const setActiveEnvironmentPreset = useCallback((id: string | null) => {
+    setCurrentProject((prev) => {
+      if (!prev) return prev;
+      const updated = {
+        ...prev,
+        activeEnvironmentPresetId: id,
+        updatedAt: now(),
+      };
+      currentProjectRef.current = updated;
+      return updated;
+    });
+
+    scheduleAutoSave();
+  }, [scheduleAutoSave]);
+
+  // ============================================
   // LENS CRUD
   // ============================================
 
@@ -1278,6 +1395,15 @@ export function useProject(): UseProjectReturn {
     updateWardrobe,
     deleteWardrobe,
     duplicateWardrobe,
+
+    // Environment Lock CRUD
+    environmentPresets,
+    activeEnvironmentPresetId,
+    addEnvironmentPreset,
+    updateEnvironmentPreset,
+    deleteEnvironmentPreset,
+    duplicateEnvironmentPreset,
+    setActiveEnvironmentPreset,
     
     // Lens CRUD
     lenses,

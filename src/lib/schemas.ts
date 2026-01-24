@@ -104,6 +104,28 @@ export const CastMemberSchema = z.object({
   wardrobeId: z.string(),
 });
 
+// Environment Lock - stage anchors within a preset
+export const StageAnchorSchema = z.object({
+  name: z.string().min(1, "Anchor name is required"),
+  position: z.string().min(1, "Anchor position is required"),
+  materialTexture: z.string().min(1, "Material/texture is required"),
+  uniqueDetail: z.string().min(1, "Unique detail is required"),
+});
+
+export const EnvironmentPresetSchema = z.object({
+  id: z.string().min(1),
+  uiName: z.string().min(1, "Preset name is required"),
+  sceneDescription: z.string().min(1, "Scene description is required"),
+  stageAnchors: z.array(StageAnchorSchema).min(3).max(5),
+  spatialLayoutNotes: z.string().min(1, "Spatial layout notes are required"),
+  lightingNotes: z.string().min(1, "Lighting notes are required"),
+  colorPaletteNotes: z.string().min(1, "Color palette notes are required"),
+  cameraViewNotes: z.string().min(1, "Camera/view notes are required"),
+  doNotChangeConstraints: z.array(z.string()),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
 // ============================================
 // PROMPT REQUEST SCHEMA
 // ============================================
@@ -152,6 +174,8 @@ export type MicroDetailPack = z.infer<typeof MicroDetailPackSchema>;
 export type CastMember = z.infer<typeof CastMemberSchema>;
 export type PromptRequest = z.infer<typeof PromptRequestSchema>;
 export type RecommendedLensByFraming = z.infer<typeof RecommendedLensByFramingSchema>;
+export type StageAnchor = z.infer<typeof StageAnchorSchema>;
+export type EnvironmentPreset = z.infer<typeof EnvironmentPresetSchema>;
 
 // ============================================
 // VALIDATION HELPERS

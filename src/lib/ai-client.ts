@@ -10,6 +10,7 @@ import {
   PromptRequest,
   Framing,
 } from "./schemas";
+import { OneAndDoneOptions, OneAndDoneValidated } from "./one-and-done";
 
 interface AIResult<T> {
   ok: boolean;
@@ -87,4 +88,23 @@ export async function upgradeSceneHeart(
   params: UpgradeSceneHeartParams
 ): Promise<AIResult<SceneHeartUpgrade>> {
   return callAI("/api/ai/upgrade-scene-heart", params);
+}
+
+export interface OneAndDoneParams {
+  sceneHeart: string;
+  castSummaries?: string[];
+  framing?: Framing;
+  mechanicLock?: string | null;
+  focusTarget?: string | null;
+  existingAnchors?: string[];
+  lookOptions: OneAndDoneOptions["lookFamilies"];
+  lensOptions: OneAndDoneOptions["lensProfiles"];
+  microTextureOptions: OneAndDoneOptions["microTexturePacks"];
+  microDetailOptions: OneAndDoneOptions["microDetailPacks"];
+}
+
+export async function runOneAndDone(
+  params: OneAndDoneParams
+): Promise<AIResult<OneAndDoneValidated>> {
+  return callAI("/api/ai/one-and-done", params);
 }

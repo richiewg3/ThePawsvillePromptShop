@@ -20,6 +20,7 @@ import { PromptPreview } from "@/components/prompt-preview";
 import { LookInfoPopover } from "@/components/look-info-popover";
 import { AISuggestionModal, AnchorSuggestionModal } from "@/components/ai-suggestion-modal";
 import { SceneHeartUpgradeModal } from "@/components/scene-heart-upgrade-modal";
+import { OneAndDoneModal } from "@/components/one-and-done-modal";
 import { ProjectsList } from "@/components/projects-list";
 import { PromptsList } from "@/components/prompts-list";
 import { PromptHistory } from "@/components/prompt-history";
@@ -30,8 +31,10 @@ import {
   suggestFocusTarget,
   runQACheck,
   upgradeSceneHeart,
+  runOneAndDone,
 } from "@/lib/ai-client";
 import { SceneHeartUpgrade } from "@/lib/schemas";
+import { OneAndDoneValidated } from "@/lib/one-and-done";
 
 const ASPECT_RATIO_OPTIONS: { value: AspectRatio; label: string }[] = [
   { value: "1x1", label: "1:1 Square" },
@@ -113,6 +116,12 @@ export default function PromptComposerPage() {
   const [upgradeLoading, setUpgradeLoading] = useState(false);
   const [upgradeError, setUpgradeError] = useState<string | null>(null);
   const [upgradeData, setUpgradeData] = useState<SceneHeartUpgrade | null>(null);
+
+  // One & Done state
+  const [oneAndDoneModalOpen, setOneAndDoneModalOpen] = useState(false);
+  const [oneAndDoneLoading, setOneAndDoneLoading] = useState(false);
+  const [oneAndDoneError, setOneAndDoneError] = useState<string | null>(null);
+  const [oneAndDoneData, setOneAndDoneData] = useState<OneAndDoneValidated | null>(null);
 
   // Mobile sidebar state
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -396,6 +405,119 @@ export default function PromptComposerPage() {
     setUpgradeModalOpen(false);
   };
 
+  const handleOneAndDone = async () => {
+    if (!sceneHeart.trim()) {
+      alert("Please enter a Scene Heart first");
+      return;
+    }
+
+    setOneAndDoneLoading(true);
+    setOneAndDoneError(null);
+    setOneAndDoneData(null);
+    setOneAndDoneModalOpen(true);
+
+    const castSummaries = cast
+      .map((member) => characters.find((ch) => ch.id === member.characterId)?.uiName || "")
+      .filter(Boolean);
+
+    const lookOptions = looks.map((look) => ({
+      id: look.id,
+      name: look.uiName,
+    }));
+
+    const lensOptions = lenses.map((lens) => ({
+      id: lens.id,
+      name: lens.uiName,
+      focalLengthMm: lens.focalLengthMm,
+      category: lens.category,
+    }));
+
+    const microTextureOptions = microTextures.map((pack) => ({
+      id: pack.id,
+      name: pack.uiName,
+    }));
+
+    const microDetailOptions = microDetails.map((pack) => ({
+      id: pack.id,
+      name: pack.uiName,
+    }));
+
+    const result = await runOneAndDone({
+      sceneHeart,
+      castSummaries,
+      framing,
+      mechanicLock: mechanicLock || null,
+      focusTarget: focusTarget || null,
+      existingAnchors: environmentAnchors.filter((a) => a.trim()),
+      lookOptions,
+      lensOptions,
+      microTextureOptions,
+      microDetailOptions,
+    });
+
+    setOneAndDoneLoading(false);
+
+    if (result.ok && result.data) {
+      setOneAndDoneData(result.data);
+    } else {
+      setOneAndDoneError(result.error?.message || "Failed to run One & Done");
+    }
+  };
+
+  const handleApplyOneAndDone = (payload: {
+    acceptedSections: Record<
+      | "ultraPrecisePrompt"
+      | "environmentAnchors"
+      | "lookLens"
+      | "mechanicLock"
+      | "focusTarget"
+      | "microPacks",
+      boolean
+    >;
+    lookLensChoice: "primary" | "alternate";
+  }) => {
+    if (!oneAndDoneData) return;
+
+    saveHistoryEntry("Before One & Done");
+
+    const { acceptedSections } = payload;
+
+    if (acceptedSections.ultraPrecisePrompt && oneAndDoneData.ultraPrecisePrompt.value) {
+      setSceneHeart(oneAndDoneData.ultraPrecisePrompt.value);
+    }
+
+    if (acceptedSections.environmentAnchors && oneAndDoneData.environmentAnchors.value) {
+      const newAnchors = [...oneAndDoneData.environmentAnchors.value];
+      while (newAnchors.length < 5) newAnchors.push("");
+      setEnvironmentAnchors(newAnchors.slice(0, 5));
+    }
+
+    if (acceptedSections.lookLens && oneAndDoneData.lookLens.value) {
+      const useAlternate = payload.lookLensChoice === "alternate";
+      const recommendation =
+        useAlternate && oneAndDoneData.lookLens.alternate
+          ? oneAndDoneData.lookLens.alternate
+          : oneAndDoneData.lookLens.value;
+
+      setLookFamilyId(recommendation.lookFamilyId);
+      setLensMode(recommendation.lensMode);
+      setLensProfileId(recommendation.lensMode === "manual" ? recommendation.lensProfileId || "" : "");
+    }
+
+    if (acceptedSections.mechanicLock && oneAndDoneData.mechanicLock.value) {
+      setMechanicLock(oneAndDoneData.mechanicLock.value);
+    }
+
+    if (acceptedSections.focusTarget && oneAndDoneData.focusTarget.value) {
+      setFocusTarget(oneAndDoneData.focusTarget.value);
+    }
+
+    if (acceptedSections.microPacks && oneAndDoneData.microPacks.value) {
+      setSelectedMicroTextures(oneAndDoneData.microPacks.value.texturePackIds);
+      setSelectedMicroDetails(oneAndDoneData.microPacks.value.detailPackIds);
+    }
+  };
+
   // ============================================
   // RENDER: Projects List (no project open)
   // ============================================
@@ -610,6 +732,24 @@ export default function PromptComposerPage() {
                         <>
                           <span>✨</span>
                           Upgrade Heart
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleOneAndDone}
+                      disabled={!sceneHeart.trim() || oneAndDoneLoading}
+                      className="btn btn-primary flex items-center gap-2 text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {oneAndDoneLoading ? (
+                        <>
+                          <span className="animate-spin">⏳</span>
+                          One & Done…
+                        </>
+                      ) : (
+                        <>
+                          <span>✅</span>
+                          One & Done
                         </>
                       )}
                     </button>
@@ -878,6 +1018,20 @@ export default function PromptComposerPage() {
         onAccept={(item) => setFocusTarget(item)}
         isLoading={focusLoading}
         error={focusError}
+      />
+
+      <OneAndDoneModal
+        isOpen={oneAndDoneModalOpen}
+        onClose={() => setOneAndDoneModalOpen(false)}
+        data={oneAndDoneData}
+        isLoading={oneAndDoneLoading}
+        error={oneAndDoneError}
+        onRetry={handleOneAndDone}
+        onApply={handleApplyOneAndDone}
+        looks={looks}
+        lenses={lenses}
+        microTextures={microTextures}
+        microDetails={microDetails}
       />
 
       <SceneHeartUpgradeModal

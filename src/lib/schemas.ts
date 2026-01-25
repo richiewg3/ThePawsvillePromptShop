@@ -10,6 +10,7 @@ export const FRAMINGS = ["face_emotion", "medium", "full_body", "wide_scene"] as
 export const LENS_CATEGORIES = ["wide", "normal", "tele", "macro"] as const;
 export const FOCAL_LENGTHS = [24, 35, 50, 85, 100, 135] as const;
 export const LENS_MODES = ["auto", "manual"] as const;
+export const CONFIDENCE_LEVELS = ["high", "medium", "low"] as const;
 
 // ============================================
 // BASE SCHEMAS
@@ -312,6 +313,8 @@ export const QASuggestionsSchema = z.object({
   suggestedFixes: z.array(z.string()),
 });
 
+export const ConfidenceLevelSchema = z.enum(CONFIDENCE_LEVELS);
+
 // Scene Heart Upgrade response - contains 3 rewritten versions + anchor suggestions
 export const SceneHeartUpgradeSchema = z.object({
   versions: z.object({
@@ -323,6 +326,44 @@ export const SceneHeartUpgradeSchema = z.object({
   recommendedAnchors: z.array(z.string()).min(3).max(5),
 });
 
+export const OneAndDoneSuggestionSchema = z.object({
+  ultraPrecisePrompt: z.object({
+    text: z.string(),
+    confidence: ConfidenceLevelSchema,
+  }),
+  environmentAnchors: z.object({
+    anchors: z.array(z.string()).min(3).max(5),
+    confidence: ConfidenceLevelSchema,
+  }),
+  lookLens: z.object({
+    lookFamilyId: z.string(),
+    lensMode: z.enum(LENS_MODES),
+    lensProfileId: z.string().optional(),
+    confidence: ConfidenceLevelSchema,
+    alternate: z
+      .object({
+        lookFamilyId: z.string(),
+        lensMode: z.enum(LENS_MODES),
+        lensProfileId: z.string().optional(),
+      })
+      .optional(),
+  }),
+  mechanicLock: z.object({
+    text: z.string(),
+    confidence: ConfidenceLevelSchema,
+  }),
+  focusTarget: z.object({
+    text: z.string(),
+    confidence: ConfidenceLevelSchema,
+  }),
+  microPacks: z.object({
+    texturePackIds: z.array(z.string()),
+    detailPackIds: z.array(z.string()),
+    confidence: ConfidenceLevelSchema,
+  }),
+  assumptions: z.array(z.string()),
+});
+
 export type AIResponse = z.infer<typeof AIResponseSchema>;
 export type AnchorSuggestions = z.infer<typeof AnchorSuggestionsSchema>;
 export type MechanicLockSuggestions = z.infer<typeof MechanicLockSuggestionsSchema>;
@@ -330,3 +371,5 @@ export type FocusTargetSuggestions = z.infer<typeof FocusTargetSuggestionsSchema
 export type MicroDetailSuggestions = z.infer<typeof MicroDetailSuggestionsSchema>;
 export type QASuggestions = z.infer<typeof QASuggestionsSchema>;
 export type SceneHeartUpgrade = z.infer<typeof SceneHeartUpgradeSchema>;
+export type ConfidenceLevel = z.infer<typeof ConfidenceLevelSchema>;
+export type OneAndDoneSuggestion = z.infer<typeof OneAndDoneSuggestionSchema>;

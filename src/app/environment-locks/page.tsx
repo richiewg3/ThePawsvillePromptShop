@@ -52,6 +52,9 @@ export default function EnvironmentLocksPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formData, setFormData] = useState<EnvironmentFormData>(emptyForm);
+  const [analysisFile, setAnalysisFile] = useState<File | null>(null);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   const activePreset = useMemo(
     () => environmentPresets.find((preset) => preset.id === activeEnvironmentPresetId) || null,
@@ -61,6 +64,8 @@ export default function EnvironmentLocksPage() {
   const openCreateModal = () => {
     setEditingId(null);
     setFormData(emptyForm);
+    setAnalysisFile(null);
+    setAnalysisError(null);
     setIsModalOpen(true);
   };
 
@@ -76,6 +81,8 @@ export default function EnvironmentLocksPage() {
       cameraViewNotes: preset.cameraViewNotes,
       doNotChangeConstraints: preset.doNotChangeConstraints.join("\n"),
     });
+    setAnalysisFile(null);
+    setAnalysisError(null);
     setIsModalOpen(true);
   };
 
@@ -144,6 +151,59 @@ export default function EnvironmentLocksPage() {
       if (prev.stageAnchors.length <= 3) return prev;
       return { ...prev, stageAnchors: prev.stageAnchors.filter((_, idx) => idx !== index) };
     });
+  };
+
+  const handleAnalyzeImage = async () => {
+    if (!analysisFile) {
+      setAnalysisError("Please select an environment image to analyze.");
+      return;
+    }
+
+    setIsAnalyzing(true);
+    setAnalysisError(null);
+
+    try {
+      const payload = new FormData();
+      payload.append("image", analysisFile);
+
+      const response = await fetch("/api/environment/analyze", {
+        method: "POST",
+        body: payload,
+      });
+
+      const data = await response.json();
+      if (!data.ok) {
+        throw new Error(data.error?.message || "Failed to analyze image");
+      }
+
+      const result = data.data;
+      const stageAnchors: StageAnchor[] = (result.stage_anchors || []).map(
+        (anchor: { name?: string; position?: string; material_texture?: string; unique_detail?: string }) => ({
+          name: anchor.name ?? "",
+          position: anchor.position ?? "",
+          materialTexture: anchor.material_texture ?? "",
+          uniqueDetail: anchor.unique_detail ?? "",
+        })
+      );
+
+      setFormData((prev) => ({
+        ...prev,
+        sceneDescription: result.scene_description || "",
+        stageAnchors: stageAnchors.length >= 3 ? stageAnchors : prev.stageAnchors,
+        spatialLayoutNotes: result.spatial_layout_notes || "",
+        lightingNotes: result.lighting_notes || "",
+        colorPaletteNotes: result.color_palette_grade_notes || "",
+        cameraViewNotes: result.camera_view_notes || "",
+        doNotChangeConstraints: Array.isArray(result.environment_do_not_change_constraints)
+          ? result.environment_do_not_change_constraints.join("\n")
+          : (result.environment_do_not_change_constraints || ""),
+      }));
+    } catch (error) {
+      console.error("Environment analysis failed:", error);
+      setAnalysisError(error instanceof Error ? error.message : "Failed to analyze image");
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   // Show message if no project is open
@@ -251,6 +311,32 @@ export default function EnvironmentLocksPage() {
         size="xl"
       >
         <div className="space-y-4">
+          <div className="p-3 rounded-lg border border-canvas-200 bg-canvas-50 space-y-3">
+            <div>
+              <label className="label">Analyze Environment Image (AI)</label>
+              <input
+                type="file"
+                accept="image/*"
+                className="input"
+                onChange={(event) => setAnalysisFile(event.target.files?.[0] || null)}
+              />
+              <p className="text-xs text-canvas-500 mt-1">
+                Upload an environment-only reference image to auto-fill the fields below.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={handleAnalyzeImage}
+                disabled={isAnalyzing}
+              >
+                {isAnalyzing ? "Analyzing..." : "Analyze Image (AI)"}
+              </button>
+              {analysisError && <span className="text-sm text-red-600">{analysisError}</span>}
+            </div>
+          </div>
+
           <div>
             <label className="label">
               Preset Name <span className="label-hint">(for UI display)</span>

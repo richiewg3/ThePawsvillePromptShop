@@ -39,6 +39,12 @@ export default function GlobalLibraryPage() {
     addGlobalWardrobe,
     updateGlobalWardrobe,
     deleteGlobalWardrobe,
+    storageMode,
+    isSyncing,
+    syncError,
+    hasLegacyData,
+    legacyConflictCount,
+    importLegacyToCloud,
   } = useGlobalLibrary();
   const { currentProject, addCharacter, addWardrobe } = useProject();
 
@@ -145,6 +151,18 @@ export default function GlobalLibraryPage() {
     });
   };
 
+  const handleImportLegacy = async () => {
+    if (!hasLegacyData) return;
+    if (legacyConflictCount > 0) {
+      const overwrite = confirm(
+        `${legacyConflictCount} local entries share names with cloud entries. Select OK to overwrite those in cloud, or Cancel to import without overwriting.`
+      );
+      await importLegacyToCloud({ overwriteConflicts: overwrite });
+      return;
+    }
+    await importLegacyToCloud();
+  };
+
   return (
     <div className="animate-fade-in space-y-10">
       <ManagerHeader
@@ -153,12 +171,37 @@ export default function GlobalLibraryPage() {
           <>
             Reuse characters and wardrobes across any project. These entries are stored globally and can be imported into the current project.
             <span className="ml-2 text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">GLOBAL</span>
+            <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${
+              storageMode === "azure" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
+            }`}>
+              {isSyncing ? "Syncing..." : (storageMode === "azure" ? "Cloud Synced" : "Local")}
+            </span>
           </>
         }
         icon="🌐"
         onAdd={() => openCharacterModal()}
         addLabel="Add Global Character"
       />
+
+      {syncError && (
+        <div className="p-3 rounded-lg border border-red-200 bg-red-50 text-sm text-red-700">
+          {syncError}
+        </div>
+      )}
+
+      {storageMode === "azure" && hasLegacyData && (
+        <div className="p-4 rounded-xl border border-amber-200 bg-amber-50 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-amber-800">Legacy local globals detected</p>
+            <p className="text-sm text-amber-700">
+              Import your existing global characters and wardrobes from this browser into cloud storage.
+            </p>
+          </div>
+          <button className="btn btn-secondary" onClick={handleImportLegacy}>
+            Import to Cloud
+          </button>
+        </div>
+      )}
 
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">

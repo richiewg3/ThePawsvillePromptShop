@@ -25,6 +25,9 @@ import {
 
 const CONTAINER_NAME = "pawsvillepromptshop";
 const PROJECTS_PREFIX = "projects/";
+const GLOBAL_PREFIX = "global/";
+const GLOBAL_CHARACTERS_BLOB = `${GLOBAL_PREFIX}characters.json`;
+const GLOBAL_WARDROBES_BLOB = `${GLOBAL_PREFIX}wardrobes.json`;
 
 let containerClient: ContainerClient | null = null;
 
@@ -111,6 +114,71 @@ export interface ProjectListItem extends ProjectMetadata {
   promptCount: number;
   characterCount: number;
   wardrobeCount: number;
+}
+
+// ============================================
+// GLOBAL LIBRARY STORAGE
+// ============================================
+
+async function readGlobalCollection<T>(blobName: string): Promise<T[]> {
+  const client = getContainerClient();
+  if (!client) {
+    return [];
+  }
+
+  try {
+    await client.createIfNotExists();
+    const blobClient = client.getBlobClient(blobName);
+    const exists = await blobClient.exists();
+    if (!exists) {
+      return [];
+    }
+
+    const downloadResponse = await blobClient.download();
+    const content = await streamToString(downloadResponse.readableStreamBody!);
+    const parsed = JSON.parse(content);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch (error) {
+    console.error(`Error reading global collection ${blobName}:`, error);
+    throw error;
+  }
+}
+
+async function writeGlobalCollection<T>(blobName: string, items: T[]): Promise<void> {
+  const client = getContainerClient();
+  if (!client) {
+    throw new Error("Azure Storage not available");
+  }
+
+  try {
+    await client.createIfNotExists();
+    const blockBlobClient = client.getBlockBlobClient(blobName);
+    const content = JSON.stringify(items, null, 2);
+    await blockBlobClient.upload(content, content.length, {
+      blobHTTPHeaders: {
+        blobContentType: "application/json",
+      },
+    });
+  } catch (error) {
+    console.error(`Error writing global collection ${blobName}:`, error);
+    throw error;
+  }
+}
+
+export async function getGlobalCharacters(): Promise<CharacterProfile[]> {
+  return readGlobalCollection<CharacterProfile>(GLOBAL_CHARACTERS_BLOB);
+}
+
+export async function saveGlobalCharacters(characters: CharacterProfile[]): Promise<void> {
+  await writeGlobalCollection(GLOBAL_CHARACTERS_BLOB, characters);
+}
+
+export async function getGlobalWardrobes(): Promise<WardrobeProfile[]> {
+  return readGlobalCollection<WardrobeProfile>(GLOBAL_WARDROBES_BLOB);
+}
+
+export async function saveGlobalWardrobes(wardrobes: WardrobeProfile[]): Promise<void> {
+  await writeGlobalCollection(GLOBAL_WARDROBES_BLOB, wardrobes);
 }
 
 // ============================================
